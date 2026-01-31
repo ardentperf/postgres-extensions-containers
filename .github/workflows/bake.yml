@@ -1,7 +1,6 @@
 name: Build, test and publish extensions
 
 on:
-  push:
   workflow_dispatch:
     inputs:
       extension_name:
@@ -12,6 +11,7 @@ on:
           - pgvector
           - postgis
           - pgaudit
+          - pgsentinel
 
 defaults:
   run:
