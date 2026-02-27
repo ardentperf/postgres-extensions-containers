@@ -58,6 +58,15 @@
       ]
     }
   ],
+  "includePaths": [
+    "pgsentinel/**",
+    "pg_cron/**",
+    "hypopg/**",
+    "pg_hint_plan/**",
+    "pg_repack/**",
+    "hll/**",
+    "pg_partman/**"
+  ],
   "packageRules": [
     {
       "matchDatasources": [
