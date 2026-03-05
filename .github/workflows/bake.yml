@@ -12,6 +12,13 @@ on:
           - pgvector
           - postgis
           - pgaudit
+          - pgsentinel
+          - pg-cron
+          - pg-hint-plan
+          - pg-partman
+          - pg-repack
+          - hypopg
+          - hll
 
 defaults:
   run:
@@ -51,6 +58,27 @@ jobs:
               - *shared
             pgaudit:
               - 'pgaudit/**'
+              - *shared
+            pgsentinel:
+              - 'pgsentinel/**'
+              - *shared
+            pg-cron:
+              - 'pg-cron/**'
+              - *shared
+            pg-hint-plan:
+              - 'pg-hint-plan/**'
+              - *shared
+            pg-partman:
+              - 'pg-partman/**'
+              - *shared
+            pg-repack:
+              - 'pg-repack/**'
+              - *shared
+            hypopg:
+              - 'hypopg/**'
+              - *shared
+            hll:
+              - 'hll/**'
               - *shared
 
       # Compute a matrix containing the list of all extensions that have been modified
