@@ -1,6 +1,7 @@
 name: Build, test and publish extensions
 
 on:
+  push:
   workflow_dispatch:
     inputs:
       extension_name:
@@ -88,8 +89,9 @@ jobs:
           CHANGES: ${{ steps.filter.outputs.changes }}
           # Input Extension name
           INPUT_EXTENSION_NAME: ${{ github.event.inputs.extension_name }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          if [[ "${{ github.event_name }}" == 'workflow_dispatch' ]]; then
+          if [[ "${EVENT_NAME}" == 'workflow_dispatch' ]]; then
             CHANGES="[\"$INPUT_EXTENSION_NAME\"]"
           fi
 
@@ -116,3 +118,16 @@ jobs:
       extension_name: ${{ matrix.extension }}
     secrets:
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+  Catalogs:
+    name: Update Catalogs
+    needs: Bake
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Repository Dispatch
+        uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4
+        with:
+          event-type: update-catalogs
