@@ -1,7 +1,7 @@
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
-  name: ($values.name)
+  name: ($values.image_name)
 spec:
   imageName: ($values.pg_image)
   instances: 1
