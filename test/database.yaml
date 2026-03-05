@@ -9,4 +9,3 @@ spec:
     name: ($values.image_name)
   extensions:
   - name: ($values.sql_name)
-    version: ($values.version)
