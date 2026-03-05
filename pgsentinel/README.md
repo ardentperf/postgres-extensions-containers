@@ -39,7 +39,7 @@ spec:
     - name: pgsentinel
       image:
         # renovate: suite=trixie-pgdg depName=postgresql-18-pgsentinel
-        reference: ghcr.io/cloudnative-pg/pgsentinel:1.3.1-18-trixie
+        reference: ghcr.io/cloudnative-pg/pgsentinel:1.4.0-18-trixie
 ```
 
 ### 2. Enable the extension in a database
@@ -60,7 +60,7 @@ spec:
   extensions:
   - name: pgsentinel
     # renovate: suite=trixie-pgdg depName=postgresql-18-pgsentinel
-    version: '1.3.1'
+    version: '1.4.0'
 ```
 
 ### 3. Verify installation
