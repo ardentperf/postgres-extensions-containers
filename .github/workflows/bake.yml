@@ -19,6 +19,7 @@ on:
           - pg-repack
           - hypopg
           - hll
+          - pgnodemx
 
 defaults:
   run:
@@ -79,6 +80,9 @@ jobs:
               - *shared
             hll:
               - 'hll/**'
+              - *shared
+            pgnodemx:
+              - 'pgnodemx/**'
               - *shared
 
       # Compute a matrix containing the list of all extensions that have been modified
