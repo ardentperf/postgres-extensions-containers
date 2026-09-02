@@ -54,7 +54,7 @@ Closes #<!-- proposal issue id -->
       with the component owner's GitHub handle(s).
 - [ ] A `distribution-points` entry for the new image was added under
       `repository.release` in
-      [`SECURITY-INSIGHTS.yml`](https://github.com/cloudnative-pg/postgres-extensions-containers/blob/main/SECURITY-INSIGHTS.yml).
+      [`SECURITY-INSIGHTS.yml`](https://github.com/cnpg-extensions/postgres-extensions-containers/blob/main/SECURITY-INSIGHTS.yml).
 - [ ] I confirm my commitment to maintain this extension on behalf of the
       CloudNativePG community.
 
