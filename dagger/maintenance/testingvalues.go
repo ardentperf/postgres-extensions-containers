@@ -70,7 +70,12 @@ func generateTestingValuesExtensions(
 			return nil, err
 		}
 		if !depExists {
-			return nil, fmt.Errorf("required dependency %q not found", dep)
+			out = append(out, &testingExtensionInfo{
+				Configuration:   &ExtensionConfiguration{Name: dep},
+				SQLName:         dep,
+				CreateExtension: true,
+			})
+			continue
 		}
 
 		depMetadata, err := parseExtensionMetadata(ctx, source.Directory(dep))
