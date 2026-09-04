@@ -69,6 +69,10 @@ def final_files(document: dict[str, Any], path: Path) -> list[dict[str, str]]:
         digests = subject.get("digest")
         if not isinstance(name, str) or not name:
             raise ValueError(f"{path}: every subject needs a name")
+        if name.startswith("pkg:"):
+            raise ValueError(
+                f"{path}: subject {name!r} is an image subject; use a local-export SBOM"
+            )
         if not isinstance(digests, dict) or not digests:
             raise ValueError(f"{path}: subject {name!r} needs a digest")
         # BuildKit emits one digest. Prefer SHA256 if a producer emits more

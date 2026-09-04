@@ -13,9 +13,28 @@ def checksum(value):
     return [{"algorithm": "SHA256", "checksumValue": value}]
 
 
+def package(spdxid, name, version, purl):
+    return {
+        "SPDXID": spdxid,
+        "copyrightText": "NOASSERTION",
+        "downloadLocation": "NOASSERTION",
+        "externalRefs": [{
+            "referenceCategory": "PACKAGE-MANAGER",
+            "referenceLocator": purl,
+            "referenceType": "purl",
+        }],
+        "filesAnalyzed": True,
+        "licenseConcluded": "NOASSERTION",
+        "licenseDeclared": "NOASSERTION",
+        "name": name,
+        "supplier": "NOASSERTION",
+        "versionInfo": version,
+    }
+
+
 def builder_document(subjects):
     return {
-        "_type": "https://in-toto.io/Statement/v0.1",
+        "_type": "https://in-toto.io/Statement/v1",
         "predicateType": "https://spdx.dev/Document",
         "subject": subjects,
         "predicate": {
@@ -24,37 +43,19 @@ def builder_document(subjects):
             "name": "builder",
             "packages": [
                 {
-                    "SPDXID": "SPDXRef-Package-root",
+                    "SPDXID": "SPDXRef-DocumentRoot-Directory-sbom",
                     "name": "sbom",
+                    "supplier": "NOASSERTION",
+                    "downloadLocation": "NOASSERTION",
+                    "filesAnalyzed": False,
+                    "licenseConcluded": "NOASSERTION",
+                    "licenseDeclared": "NOASSERTION",
+                    "copyrightText": "NOASSERTION",
                     "primaryPackagePurpose": "FILE",
                 },
-                {
-                    "SPDXID": "SPDXRef-Package-base",
-                    "name": "base",
-                    "versionInfo": "1",
-                    "externalRefs": [{
-                        "referenceType": "purl",
-                        "referenceLocator": "pkg:generic/base@1",
-                    }],
-                },
-                {
-                    "SPDXID": "SPDXRef-Package-extension",
-                    "name": "extension",
-                    "versionInfo": "2",
-                    "externalRefs": [{
-                        "referenceType": "purl",
-                        "referenceLocator": "pkg:generic/extension@2",
-                    }],
-                },
-                {
-                    "SPDXID": "SPDXRef-Package-build-only",
-                    "name": "build-only",
-                    "versionInfo": "3",
-                    "externalRefs": [{
-                        "referenceType": "purl",
-                        "referenceLocator": "pkg:generic/build-only@3",
-                    }],
-                },
+                package("SPDXRef-Package-base", "base", "1", "pkg:generic/base@1"),
+                package("SPDXRef-Package-extension", "extension", "2", "pkg:generic/extension@2"),
+                package("SPDXRef-Package-build-only", "build-only", "3", "pkg:generic/build-only@3"),
             ],
             "files": [
                 {"SPDXID": "SPDXRef-File-base", "fileName": "usr/lib/base.so", "checksums": checksum("base")},
@@ -62,8 +63,8 @@ def builder_document(subjects):
                 {"SPDXID": "SPDXRef-File-build-only", "fileName": "usr/bin/cc", "checksums": checksum("build-only")},
             ],
             "relationships": [
-                {"spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-Package-root"},
-                {"spdxElementId": "SPDXRef-Package-root", "relationshipType": "CONTAINS", "relatedSpdxElement": "SPDXRef-Package-extension"},
+                {"spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-DocumentRoot-Directory-sbom"},
+                {"spdxElementId": "SPDXRef-DocumentRoot-Directory-sbom", "relationshipType": "CONTAINS", "relatedSpdxElement": "SPDXRef-Package-extension"},
                 {"spdxElementId": "SPDXRef-Package-base", "relationshipType": "CONTAINS", "relatedSpdxElement": "SPDXRef-File-base"},
                 {"spdxElementId": "SPDXRef-Package-extension", "relationshipType": "CONTAINS", "relatedSpdxElement": "SPDXRef-File-extension"},
                 {"spdxElementId": "SPDXRef-Package-base", "relationshipType": "DEPENDENCY_OF", "relatedSpdxElement": "SPDXRef-Package-extension"},
@@ -95,7 +96,7 @@ class ComposeSbomTest(unittest.TestCase):
         self.assertIn(("DEPENDENCY_OF", "SPDXRef-Package-base", "SPDXRef-Package-extension"), relationships)
         self.assertIn(("CONTAINS", "SPDXRef-Package-extension", output["files"][0]["SPDXID"]), relationships)
         self.assertIn(("CONTAINS", "SPDXRef-Package-extension-payload", output["files"][1]["SPDXID"]), relationships)
-        self.assertNotIn(("CONTAINS", "SPDXRef-Package-root", "SPDXRef-Package-extension"), relationships)
+        self.assertNotIn(("CONTAINS", "SPDXRef-DocumentRoot-Directory-sbom", "SPDXRef-Package-extension"), relationships)
         self.assertNotIn("usr/bin/cc", json.dumps(output))
 
     def test_unmatched_final_file_is_attributed_to_extension(self):
@@ -104,6 +105,12 @@ class ComposeSbomTest(unittest.TestCase):
         ]))
         self.assertEqual([package["name"] for package in output["packages"]], ["extension-payload"])
         self.assertEqual(output["files"][0]["fileName"], "missing")
+
+    def test_registry_image_subject_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "image subject"):
+            compose(builder_document([
+                {"name": "pkg:docker/example@latest", "digest": {"sha256": "image"}},
+            ]))
 
 
 if __name__ == "__main__":
