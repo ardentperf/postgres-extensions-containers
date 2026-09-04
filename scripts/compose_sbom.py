@@ -22,13 +22,7 @@ from typing import Any
 
 
 DEPENDENCY_RELATIONSHIP_TYPES = {
-    "BUILD_DEPENDENCY_OF",
     "DEPENDENCY_OF",
-    "DEV_DEPENDENCY_OF",
-    "OPTIONAL_DEPENDENCY_OF",
-    "PROVIDED_DEPENDENCY_OF",
-    "RUNTIME_DEPENDENCY_OF",
-    "TEST_DEPENDENCY_OF",
     "DEPENDS_ON",
 }
 
@@ -45,13 +39,9 @@ def read_json(path: Path) -> dict[str, Any]:
 
 def predicate_from(document: dict[str, Any], path: Path) -> dict[str, Any]:
     predicate = document.get("predicate")
-    if predicate is not None:
-        if not isinstance(predicate, dict):
-            raise ValueError(f"{path}: predicate must be a JSON object")
-        return predicate
-    if "spdxVersion" in document:
-        return document
-    raise ValueError(f"{path}: expected an in-toto statement or SPDX document")
+    if not isinstance(predicate, dict):
+        raise ValueError(f"{path}: expected a BuildKit attestation with an SPDX predicate")
+    return predicate
 
 
 def checksum_key(algorithm: str, value: str) -> tuple[str, str]:
@@ -65,62 +55,31 @@ def synthetic_package(package: dict[str, Any]) -> bool:
 
 
 def final_files(document: dict[str, Any], path: Path) -> list[dict[str, str]]:
-    """Return final file names and checksums from an attestation or SPDX doc."""
+    """Return final file names and checksums from a BuildKit attestation."""
 
     subjects = document.get("subject")
-    if subjects is not None:
-        if not isinstance(subjects, list):
-            raise ValueError(f"{path}: subject must be a JSON array")
-        files: list[dict[str, str]] = []
-        for subject in subjects:
-            if not isinstance(subject, dict):
-                raise ValueError(f"{path}: every subject must be an object")
-            name = subject.get("name")
-            digests = subject.get("digest")
-            if not isinstance(name, str) or not name:
-                raise ValueError(f"{path}: every subject needs a name")
-            if not isinstance(digests, dict) or not digests:
-                raise ValueError(f"{path}: subject {name!r} needs a digest")
-            # BuildKit emits one digest. Prefer SHA256 if a producer emits more
-            # than one so matching remains stable across SPDX producers.
-            algorithm = "sha256" if "sha256" in digests else next(iter(digests))
-            value = digests.get(algorithm)
-            if not isinstance(value, str) or not value:
-                raise ValueError(f"{path}: subject {name!r} has an invalid digest")
-            files.append({"name": name.lstrip("/"), "algorithm": algorithm, "value": value})
-        if not files:
-            raise ValueError(f"{path}: final image has no file subjects")
-        return files
+    if not isinstance(subjects, list):
+        raise ValueError(f"{path}: expected a BuildKit attestation with a subject array")
 
-    predicate = predicate_from(document, path)
-    records = predicate.get("files")
-    if not isinstance(records, list):
-        raise ValueError(f"{path}: expected subject or SPDX files")
-
-    files = []
-    for record in records:
-        if not isinstance(record, dict):
-            raise ValueError(f"{path}: every SPDX file must be an object")
-        name = record.get("fileName")
-        checksums = record.get("checksums")
-        if not isinstance(name, str) or not name or not isinstance(checksums, list):
-            raise ValueError(f"{path}: every SPDX file needs fileName and checksums")
-        for checksum in checksums:
-            if not isinstance(checksum, dict):
-                continue
-            algorithm = checksum.get("algorithm")
-            value = checksum.get("checksumValue")
-            if isinstance(algorithm, str) and isinstance(value, str) and value:
-                files.append({
-                    "name": name.lstrip("/"),
-                    "algorithm": algorithm,
-                    "value": value,
-                })
-                break
-        else:
-            raise ValueError(f"{path}: SPDX file {name!r} has no usable checksum")
+    files: list[dict[str, str]] = []
+    for subject in subjects:
+        if not isinstance(subject, dict):
+            raise ValueError(f"{path}: every subject must be an object")
+        name = subject.get("name")
+        digests = subject.get("digest")
+        if not isinstance(name, str) or not name:
+            raise ValueError(f"{path}: every subject needs a name")
+        if not isinstance(digests, dict) or not digests:
+            raise ValueError(f"{path}: subject {name!r} needs a digest")
+        # BuildKit emits one digest. Prefer SHA256 if a producer emits more
+        # than one so matching remains stable across SPDX producers.
+        algorithm = "sha256" if "sha256" in digests else next(iter(digests))
+        value = digests.get(algorithm)
+        if not isinstance(value, str) or not value:
+            raise ValueError(f"{path}: subject {name!r} has an invalid digest")
+        files.append({"name": name.lstrip("/"), "algorithm": algorithm, "value": value})
     if not files:
-        raise ValueError(f"{path}: final image has no SPDX files")
+        raise ValueError(f"{path}: final image has no file subjects")
     return files
 
 
@@ -169,22 +128,14 @@ def extension_file(final_record: dict[str, str]) -> dict[str, Any]:
     }
 
 
-def compose(builder_document: dict[str, Any], final_document: dict[str, Any] | None = None, *,
-            builder_path: Path = Path("builder"), final_path: Path = Path("final")) -> dict[str, Any]:
-    """Return a raw SPDX predicate composed from builder and final documents.
-
-    When ``final_document`` is omitted, the builder attestation's subject is
-    used. BuildKit places the final image subjects on that attestation, which
-    avoids scanning or reading an SBOM for the scratch stage.
-    """
+def compose(builder_document: dict[str, Any], *,
+            builder_path: Path = Path("builder")) -> dict[str, Any]:
+    """Return a raw SPDX predicate composed from a builder attestation."""
 
     builder = predicate_from(builder_document, builder_path)
-    if final_document is None and "subject" not in builder_document:
+    if "subject" not in builder_document:
         raise ValueError(f"{builder_path}: builder attestation has no final-image subjects")
-    final = final_files(
-        builder_document if final_document is None else final_document,
-        builder_path if final_document is None else final_path,
-    )
+    final = final_files(builder_document, builder_path)
     builder_records = builder.get("files")
     relationships = builder.get("relationships")
     packages = builder.get("packages")
@@ -210,13 +161,17 @@ def compose(builder_document: dict[str, Any], final_document: dict[str, Any] | N
     }
     package_ids = set(builder_packages)
     retained_package_ids: set[str] = set()
-    owned_source_file_ids = {
-        relationship.get("relatedSpdxElement")
-        for relationship in relationships
-        if isinstance(relationship, dict)
-        and relationship.get("relationshipType") == "CONTAINS"
-        and relationship.get("spdxElementId") in package_ids
-    }
+    owners_by_source_file: defaultdict[str, set[str]] = defaultdict(set)
+    for relationship in relationships:
+        if not isinstance(relationship, dict):
+            continue
+        if relationship.get("relationshipType") != "CONTAINS":
+            continue
+        package_id = relationship.get("spdxElementId")
+        source_file_id = relationship.get("relatedSpdxElement")
+        if package_id in package_ids and isinstance(source_file_id, str):
+            owners_by_source_file[source_file_id].add(package_id)
+    owned_source_file_ids = set(owners_by_source_file)
 
     by_checksum: defaultdict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     all_file_ids: set[str] = set()
@@ -282,17 +237,12 @@ def compose(builder_document: dict[str, Any], final_document: dict[str, Any] | N
     # part of the extension payload. Retain its package owner when present;
     # otherwise attribute the file to the extension itself.
     owned_final_ids: set[str] = set()
-    for relationship in relationships:
-        if not isinstance(relationship, dict):
+    for source_file_id, package_ids_for_file in owners_by_source_file.items():
+        final_ids_for_source = source_to_final.get(source_file_id)
+        if not final_ids_for_source:
             continue
-        if relationship.get("relationshipType") != "CONTAINS":
-            continue
-        package_id = relationship.get("spdxElementId")
-        source_file_id = relationship.get("relatedSpdxElement")
-        if package_id not in package_ids or source_file_id not in source_to_final:
-            continue
-        retained_package_ids.add(package_id)
-        owned_final_ids.update(source_to_final[source_file_id])
+        retained_package_ids.update(package_ids_for_file)
+        owned_final_ids.update(final_ids_for_source)
 
     extension_file_ids = final_ids - owned_final_ids
 

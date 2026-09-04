@@ -3,7 +3,6 @@
 
 ARG BASE=ghcr.io/cloudnative-pg/postgresql:18-minimal-trixie
 FROM $BASE AS builder
-ARG BUILDKIT_SBOM_SCAN_STAGE=true
 
 ARG PG_MAJOR
 ARG EXT_VERSION
@@ -41,7 +40,6 @@ RUN mkdir -p /system /licenses && \
 	done
 
 FROM scratch
-ARG BUILDKIT_SBOM_SCAN_STAGE=false
 ARG PG_MAJOR
 
 # Licenses

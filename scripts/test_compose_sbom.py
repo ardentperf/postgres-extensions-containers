@@ -13,11 +13,11 @@ def checksum(value):
     return [{"algorithm": "SHA256", "checksumValue": value}]
 
 
-def builder_document():
+def builder_document(subjects):
     return {
         "_type": "https://in-toto.io/Statement/v0.1",
         "predicateType": "https://spdx.dev/Document",
-        "subject": [],
+        "subject": subjects,
         "predicate": {
             "spdxVersion": "SPDX-2.3",
             "SPDXID": "SPDXRef-DOCUMENT",
@@ -75,17 +75,10 @@ def builder_document():
 
 class ComposeSbomTest(unittest.TestCase):
     def test_final_packages_and_referenced_dependencies_are_retained(self):
-        final_document = {
-            "_type": "https://in-toto.io/Statement/v0.1",
-            "predicateType": "https://spdx.dev/Document",
-            "subject": [
-                {"name": "lib/ext.so", "digest": {"sha256": "extension"}},
-                {"name": "generated/artifact", "digest": {"sha256": "generated"}},
-            ],
-            "predicate": {"spdxVersion": "SPDX-2.3", "files": []},
-        }
-
-        output = compose(builder_document(), final_document)
+        output = compose(builder_document([
+            {"name": "lib/ext.so", "digest": {"sha256": "extension"}},
+            {"name": "generated/artifact", "digest": {"sha256": "generated"}},
+        ]))
 
         self.assertEqual(
             [package["name"] for package in output["packages"]],
@@ -106,10 +99,9 @@ class ComposeSbomTest(unittest.TestCase):
         self.assertNotIn("usr/bin/cc", json.dumps(output))
 
     def test_unmatched_final_file_is_attributed_to_extension(self):
-        final_document = {
-            "subject": [{"name": "missing", "digest": {"sha256": "missing"}}]
-        }
-        output = compose(builder_document(), final_document)
+        output = compose(builder_document([
+            {"name": "missing", "digest": {"sha256": "missing"}},
+        ]))
         self.assertEqual([package["name"] for package in output["packages"]], ["extension-payload"])
         self.assertEqual(output["files"][0]["fileName"], "missing")
 

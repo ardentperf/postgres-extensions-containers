@@ -3,7 +3,6 @@
 
 ARG BASE=ghcr.io/cloudnative-pg/postgresql:18-minimal-trixie
 FROM $BASE AS builder
-ARG BUILDKIT_SBOM_SCAN_STAGE=true
 
 ARG PG_MAJOR
 ARG EXT_VERSION
@@ -14,7 +13,6 @@ RUN apt-get update && \
 	apt-get install -y --no-install-recommends "postgresql-${PG_MAJOR}-debversion=${EXT_VERSION}"
 
 FROM scratch
-ARG BUILDKIT_SBOM_SCAN_STAGE=false
 ARG PG_MAJOR
 
 # Licenses
