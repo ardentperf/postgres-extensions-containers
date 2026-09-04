@@ -51,7 +51,7 @@ spec:
   extensions:
   - name: plr
     # renovate: suite=trixie-pgdg depName=postgresql-18-plr extractVersion=^(?<version>\d+\.\d+\.\d+\.\d+)
-    version: '8.4.8.6'
+    version: '8.4.8.7'
 ```
 Alternatively, you can enable the extension directly with SQL:
 
