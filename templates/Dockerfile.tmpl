@@ -4,9 +4,8 @@
 {{ $packageName := replaceAll .Package "%version%" "${PG_MAJOR}" }}
 ARG BASE=ghcr.io/cloudnative-pg/postgresql:{{ .DefaultVersion }}-minimal-{{ .DefaultDistro }}
 FROM $BASE AS builder
-# Include package metadata from the complete PostgreSQL base image and
-# extension build environment in the published SBOM. The final image remains a
-# minimal scratch filesystem; the build workflow supplies its file list.
+# The build workflow derives package ownership from this stage and trims the
+# published SBOM to files in the final image. The final image remains scratch.
 ARG BUILDKIT_SBOM_SCAN_STAGE=true
 
 ARG PG_MAJOR

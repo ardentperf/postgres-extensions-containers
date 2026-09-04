@@ -82,7 +82,9 @@ jobs:
 
           # The pushed bake uses the normal multi-platform image exporter. A
           # local exporter cannot write a manifest list, so generate the
-          # intermediate SBOM once per resolved target and platform.
+          # builder-stage SBOM once per resolved target and platform. Its
+          # attestation subject contains the final image files; the final
+          # scratch-stage SBOM is not needed.
           export environment=testing
           export registry="${IMAGE_REGISTRY}"
           working_directory="${RUNNER_TEMP}/extension-sbom"
@@ -112,13 +114,10 @@ jobs:
                 --progress plain
 
               builder_sbom="${output_directory}/sbom-builder.spdx.json"
-              final_sbom="${output_directory}/sbom.spdx.json"
               test -s "${builder_sbom}"
-              test -s "${final_sbom}"
 
               ./scripts/compose_sbom.py \
                 --builder-sbom "${builder_sbom}" \
-                --final-sbom "${final_sbom}" \
                 --output "${working_directory}/predicates/${bake_target}-${platform_name}/extension-sbom.spdx.json"
               composed_sbom="${working_directory}/predicates/${bake_target}-${platform_name}/extension-sbom.spdx.json"
 

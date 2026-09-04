@@ -23,8 +23,38 @@ def builder_document():
             "SPDXID": "SPDXRef-DOCUMENT",
             "name": "builder",
             "packages": [
-                {"SPDXID": "SPDXRef-Package-base", "name": "base", "versionInfo": "1"},
-                {"SPDXID": "SPDXRef-Package-extension", "name": "extension", "versionInfo": "2"},
+                {
+                    "SPDXID": "SPDXRef-Package-root",
+                    "name": "sbom",
+                    "primaryPackagePurpose": "FILE",
+                },
+                {
+                    "SPDXID": "SPDXRef-Package-base",
+                    "name": "base",
+                    "versionInfo": "1",
+                    "externalRefs": [{
+                        "referenceType": "purl",
+                        "referenceLocator": "pkg:generic/base@1",
+                    }],
+                },
+                {
+                    "SPDXID": "SPDXRef-Package-extension",
+                    "name": "extension",
+                    "versionInfo": "2",
+                    "externalRefs": [{
+                        "referenceType": "purl",
+                        "referenceLocator": "pkg:generic/extension@2",
+                    }],
+                },
+                {
+                    "SPDXID": "SPDXRef-Package-build-only",
+                    "name": "build-only",
+                    "versionInfo": "3",
+                    "externalRefs": [{
+                        "referenceType": "purl",
+                        "referenceLocator": "pkg:generic/build-only@3",
+                    }],
+                },
             ],
             "files": [
                 {"SPDXID": "SPDXRef-File-base", "fileName": "usr/lib/base.so", "checksums": checksum("base")},
@@ -32,9 +62,11 @@ def builder_document():
                 {"SPDXID": "SPDXRef-File-build-only", "fileName": "usr/bin/cc", "checksums": checksum("build-only")},
             ],
             "relationships": [
+                {"spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-Package-root"},
+                {"spdxElementId": "SPDXRef-Package-root", "relationshipType": "CONTAINS", "relatedSpdxElement": "SPDXRef-Package-extension"},
                 {"spdxElementId": "SPDXRef-Package-base", "relationshipType": "CONTAINS", "relatedSpdxElement": "SPDXRef-File-base"},
                 {"spdxElementId": "SPDXRef-Package-extension", "relationshipType": "CONTAINS", "relatedSpdxElement": "SPDXRef-File-extension"},
-                {"spdxElementId": "SPDXRef-Package-extension", "relationshipType": "DEPENDS_ON", "relatedSpdxElement": "SPDXRef-Package-base"},
+                {"spdxElementId": "SPDXRef-Package-base", "relationshipType": "DEPENDENCY_OF", "relatedSpdxElement": "SPDXRef-Package-extension"},
                 {"spdxElementId": "SPDXRef-Package-base", "relationshipType": "CONTAINS", "relatedSpdxElement": "SPDXRef-File-build-only"},
             ],
         },
@@ -42,38 +74,44 @@ def builder_document():
 
 
 class ComposeSbomTest(unittest.TestCase):
-    def test_subjects_replace_builder_files_and_keep_packages(self):
+    def test_final_packages_and_referenced_dependencies_are_retained(self):
         final_document = {
             "_type": "https://in-toto.io/Statement/v0.1",
             "predicateType": "https://spdx.dev/Document",
             "subject": [
                 {"name": "lib/ext.so", "digest": {"sha256": "extension"}},
-                {"name": "system/base.so", "digest": {"sha256": "base"}},
+                {"name": "generated/artifact", "digest": {"sha256": "generated"}},
             ],
             "predicate": {"spdxVersion": "SPDX-2.3", "files": []},
         }
 
         output = compose(builder_document(), final_document)
 
-        self.assertEqual([package["name"] for package in output["packages"]], ["base", "extension"])
+        self.assertEqual(
+            [package["name"] for package in output["packages"]],
+            ["base", "extension", "extension-payload"],
+        )
         self.assertEqual(
             [file["fileName"] for file in output["files"]],
-            ["lib/ext.so", "system/base.so"],
+            ["lib/ext.so", "generated/artifact"],
         )
         relationships = {
             (rel["relationshipType"], rel["spdxElementId"], rel["relatedSpdxElement"])
             for rel in output["relationships"]
         }
-        self.assertIn(("DEPENDS_ON", "SPDXRef-Package-extension", "SPDXRef-Package-base"), relationships)
-        self.assertEqual(sum(rel["relationshipType"] == "CONTAINS" for rel in output["relationships"]), 2)
+        self.assertIn(("DEPENDENCY_OF", "SPDXRef-Package-base", "SPDXRef-Package-extension"), relationships)
+        self.assertIn(("CONTAINS", "SPDXRef-Package-extension", output["files"][0]["SPDXID"]), relationships)
+        self.assertIn(("CONTAINS", "SPDXRef-Package-extension-payload", output["files"][1]["SPDXID"]), relationships)
+        self.assertNotIn(("CONTAINS", "SPDXRef-Package-root", "SPDXRef-Package-extension"), relationships)
         self.assertNotIn("usr/bin/cc", json.dumps(output))
 
-    def test_missing_final_file_fails(self):
+    def test_unmatched_final_file_is_attributed_to_extension(self):
         final_document = {
             "subject": [{"name": "missing", "digest": {"sha256": "missing"}}]
         }
-        with self.assertRaisesRegex(ValueError, "not found"):
-            compose(builder_document(), final_document)
+        output = compose(builder_document(), final_document)
+        self.assertEqual([package["name"] for package in output["packages"]], ["extension-payload"])
+        self.assertEqual(output["files"][0]["fileName"], "missing")
 
 
 if __name__ == "__main__":

@@ -68,8 +68,8 @@ target "default" {
     "index,manifest:io.cloudnativepg.image.base.pgmajor=${build.pgVersion}",
     "index,manifest:io.cloudnativepg.image.base.os=${build.distro}",
     "index,manifest:io.cloudnativepg.image.sql.version=${getExtensionSqlVersion(build.distro, build.pgVersion)}",
-    "index,manifest:io.cloudnativepg.image.sbom.scope=builder-packages-final-files",
-    "index,manifest:io.cloudnativepg.image.sbom.includes=Builder package inventory and final scratch payload files",
+    "index,manifest:io.cloudnativepg.image.sbom.scope=final-packages-final-files",
+    "index,manifest:io.cloudnativepg.image.sbom.includes=Final file packages, referenced dependencies, and extension-owned artifacts",
   ]
   labels = {
     "org.opencontainers.image.created" = "${now}",
@@ -88,8 +88,8 @@ target "default" {
     "io.cloudnativepg.image.base.pgmajor" = "${build.pgVersion}",
     "io.cloudnativepg.image.base.os" = "${build.distro}",
     "io.cloudnativepg.image.sql.version" = "${getExtensionSqlVersion(build.distro, build.pgVersion)}",
-    "io.cloudnativepg.image.sbom.scope" = "builder-packages-final-files",
-    "io.cloudnativepg.image.sbom.includes" = "Builder package inventory and final scratch payload files",
+    "io.cloudnativepg.image.sbom.scope" = "final-packages-final-files",
+    "io.cloudnativepg.image.sbom.includes" = "Final file packages, referenced dependencies, and extension-owned artifacts",
   }
 }
 

@@ -182,8 +182,8 @@ other tools to identify the base PostgreSQL version and OS distribution.
 | `io.cloudnativepg.image.base.pgmajor` | PostgreSQL major version         | `18`                                                    |
 | `io.cloudnativepg.image.base.os`      | Operating system distribution    | `bookworm`                                              |
 | `io.cloudnativepg.image.sql.version`  | PostgreSQL extension SQL version | `1.6`                                                   |
-| `io.cloudnativepg.image.sbom.scope`   | SBOM scan scope                  | `builder-packages-final-files`                           |
-| `io.cloudnativepg.image.sbom.includes` | SBOM contents                  | `Builder package inventory and final scratch payload files` |
+| `io.cloudnativepg.image.sbom.scope`   | SBOM scan scope                  | `final-packages-final-files`                             |
+| `io.cloudnativepg.image.sbom.includes` | SBOM contents                  | `Final file packages, referenced dependencies, and extension-owned artifacts` |
 
 ### Standard OCI Labels
 
@@ -212,20 +212,20 @@ skopeo inspect docker://<image> | jq '.Labels'
 
 ### SBOM scope
 
-The published SBOM is composed from two build stages. Package and version
-metadata comes from the post-install `builder` stage, which provides a complete
-inventory for the PostgreSQL base image and the extension's installed
-dependencies. The file inventory comes from the final `scratch` stage, so it
-contains only files actually shipped in the extension image, including copied
-system libraries and licenses. The final stage is not scanned for packages.
-During CI, the builder SBOM and final-stage file subjects are composed into one
-SPDX predicate and attached to each platform image.
+The published SBOM is composed from the post-install `builder` stage. Its
+package list starts with packages that own files actually shipped in the
+extension image, then follows package dependency relationships from those
+packages to include referenced base packages. Its file list comes from the
+builder attestation's final-image subjects, so it contains only files actually
+shipped in the image, including copied system libraries and licenses. Files with
+no package owner in the builder SBOM are attributed to an `extension-payload`
+package because they are build artifacts.
 
-As a result, vulnerability scanners may report vulnerabilities in the core
-PostgreSQL/base image for the extension image. Those findings describe the
-package scope and do not mean that the extension image contains a second
-PostgreSQL runtime. The final extension filesystem remains a minimal `scratch`
-image containing only the extension payload.
+The final scratch stage is not scanned or read as an SBOM, and build-only
+packages are not included. During CI, the builder SBOM and its final-image file
+subjects are composed into one SPDX predicate and attached to each platform
+image. This keeps the SBOM focused on the extension payload while still making
+system-library and package dependency vulnerabilities visible.
 
 ## Image catalogs
 
