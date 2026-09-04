@@ -182,6 +182,8 @@ other tools to identify the base PostgreSQL version and OS distribution.
 | `io.cloudnativepg.image.base.pgmajor` | PostgreSQL major version         | `18`                                                    |
 | `io.cloudnativepg.image.base.os`      | Operating system distribution    | `bookworm`                                              |
 | `io.cloudnativepg.image.sql.version`  | PostgreSQL extension SQL version | `1.6`                                                   |
+| `io.cloudnativepg.image.sbom.scope`   | SBOM scan scope                  | `builder`                                               |
+| `io.cloudnativepg.image.sbom.includes` | SBOM contents                  | `PostgreSQL base image and extension build environment` |
 
 ### Standard OCI Labels
 
@@ -207,6 +209,19 @@ docker buildx imagetools inspect <image> --raw | jq '.annotations'
 # Using skopeo
 skopeo inspect docker://<image> | jq '.Labels'
 ```
+
+### SBOM scope
+
+The published SBOM is generated from the post-install `builder` stage rather
+than the final `scratch` stage. This provides a complete package inventory for
+the PostgreSQL base image and the extension's installed dependencies, including
+system libraries that are copied into the extension image.
+
+As a result, vulnerability scanners may report vulnerabilities in the core
+PostgreSQL/base image for both the PostgreSQL image and the extension image.
+Those findings describe the SBOM scope and do not mean that the extension image
+contains a second PostgreSQL runtime. The final extension filesystem remains a
+minimal `scratch` image containing only the extension payload.
 
 ## Image catalogs
 

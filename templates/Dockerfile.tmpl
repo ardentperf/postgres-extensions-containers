@@ -4,6 +4,9 @@
 {{ $packageName := replaceAll .Package "%version%" "${PG_MAJOR}" }}
 ARG BASE=ghcr.io/cloudnative-pg/postgresql:{{ .DefaultVersion }}-minimal-{{ .DefaultDistro }}
 FROM $BASE AS builder
+# Include the complete PostgreSQL base image and extension build environment in
+# the published SBOM. The final image remains a minimal scratch filesystem.
+ARG BUILDKIT_SBOM_SCAN_STAGE=true
 
 ARG PG_MAJOR
 ARG EXT_VERSION
@@ -22,6 +25,8 @@ USER 0
 #       "{{ $packageName }}=${EXT_VERSION}"
 
 FROM scratch
+# The builder stage supplies the published SBOM; do not scan this scratch stage.
+ARG BUILDKIT_SBOM_SCAN_STAGE=false
 ARG PG_MAJOR
 
 # Licenses

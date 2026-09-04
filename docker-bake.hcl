@@ -69,6 +69,8 @@ target "default" {
     "index,manifest:io.cloudnativepg.image.base.pgmajor=${build.pgVersion}",
     "index,manifest:io.cloudnativepg.image.base.os=${build.distro}",
     "index,manifest:io.cloudnativepg.image.sql.version=${getExtensionSqlVersion(build.distro, build.pgVersion)}",
+    "index,manifest:io.cloudnativepg.image.sbom.scope=builder",
+    "index,manifest:io.cloudnativepg.image.sbom.includes=PostgreSQL base image and extension build environment",
   ]
   labels = {
     "org.opencontainers.image.created" = "${now}",
@@ -87,6 +89,8 @@ target "default" {
     "io.cloudnativepg.image.base.pgmajor" = "${build.pgVersion}",
     "io.cloudnativepg.image.base.os" = "${build.distro}",
     "io.cloudnativepg.image.sql.version" = "${getExtensionSqlVersion(build.distro, build.pgVersion)}",
+    "io.cloudnativepg.image.sbom.scope" = "builder",
+    "io.cloudnativepg.image.sbom.includes" = "PostgreSQL base image and extension build environment",
   }
 }
 

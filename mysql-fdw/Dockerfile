@@ -3,6 +3,7 @@
 
 ARG BASE=ghcr.io/cloudnative-pg/postgresql:18-minimal-trixie
 FROM $BASE AS builder
+ARG BUILDKIT_SBOM_SCAN_STAGE=true
 
 ARG PG_MAJOR
 ARG EXT_VERSION
@@ -42,6 +43,7 @@ RUN mkdir -p /system /licenses && \
 	[ -n "$MARIADB_PKG" ] && mkdir -p "/licenses/$MARIADB_PKG" && cp -a "/usr/share/doc/$MARIADB_PKG/copyright" "/licenses/$MARIADB_PKG/copyright" || true
 
 FROM scratch
+ARG BUILDKIT_SBOM_SCAN_STAGE=false
 ARG PG_MAJOR
 
 # Licenses

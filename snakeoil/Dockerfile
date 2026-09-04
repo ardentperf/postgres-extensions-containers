@@ -3,6 +3,7 @@
 
 ARG BASE=ghcr.io/cloudnative-pg/postgresql:18-minimal-trixie
 FROM $BASE AS builder
+ARG BUILDKIT_SBOM_SCAN_STAGE=true
 
 ARG PG_MAJOR
 ARG EXT_VERSION
@@ -41,6 +42,7 @@ RUN mkdir -p /system /licenses /clamav && \
 	printf '44d88612fea8a8f36de82e1278abb02f:68:Eicar-Test-Signature\n' > /clamav/stub.hdb
 
 FROM scratch
+ARG BUILDKIT_SBOM_SCAN_STAGE=false
 ARG PG_MAJOR
 
 # Licenses
