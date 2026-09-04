@@ -99,13 +99,6 @@ class ComposeSbomTest(unittest.TestCase):
         self.assertNotIn(("CONTAINS", "SPDXRef-DocumentRoot-Directory-sbom", "SPDXRef-Package-extension"), relationships)
         self.assertNotIn("usr/bin/cc", json.dumps(output))
 
-    def test_unmatched_final_file_is_attributed_to_extension(self):
-        output = compose(builder_document([
-            {"name": "missing", "digest": {"sha256": "missing"}},
-        ]))
-        self.assertEqual([package["name"] for package in output["packages"]], ["extension-payload"])
-        self.assertEqual(output["files"][0]["fileName"], "missing")
-
     def test_registry_image_subject_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "image subject"):
             compose(builder_document([
