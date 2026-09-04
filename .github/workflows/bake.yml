@@ -73,6 +73,7 @@ jobs:
             _shared: &shared
               - 'docker-bake.hcl'
               - 'Taskfile.yml'
+              - 'scripts/**'
               - 'test/**'
               - 'dagger/maintenance/**'
               - '.github/workflows/bake_targets.yml'

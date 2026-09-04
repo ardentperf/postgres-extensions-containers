@@ -182,8 +182,8 @@ other tools to identify the base PostgreSQL version and OS distribution.
 | `io.cloudnativepg.image.base.pgmajor` | PostgreSQL major version         | `18`                                                    |
 | `io.cloudnativepg.image.base.os`      | Operating system distribution    | `bookworm`                                              |
 | `io.cloudnativepg.image.sql.version`  | PostgreSQL extension SQL version | `1.6`                                                   |
-| `io.cloudnativepg.image.sbom.scope`   | SBOM scan scope                  | `builder`                                               |
-| `io.cloudnativepg.image.sbom.includes` | SBOM contents                  | `PostgreSQL base image and extension build environment` |
+| `io.cloudnativepg.image.sbom.scope`   | SBOM scan scope                  | `builder-packages-final-files`                           |
+| `io.cloudnativepg.image.sbom.includes` | SBOM contents                  | `Builder package inventory and final scratch payload files` |
 
 ### Standard OCI Labels
 
@@ -212,16 +212,20 @@ skopeo inspect docker://<image> | jq '.Labels'
 
 ### SBOM scope
 
-The published SBOM is generated from the post-install `builder` stage rather
-than the final `scratch` stage. This provides a complete package inventory for
-the PostgreSQL base image and the extension's installed dependencies, including
-system libraries that are copied into the extension image.
+The published SBOM is composed from two build stages. Package and version
+metadata comes from the post-install `builder` stage, which provides a complete
+inventory for the PostgreSQL base image and the extension's installed
+dependencies. The file inventory comes from the final `scratch` stage, so it
+contains only files actually shipped in the extension image, including copied
+system libraries and licenses. The final stage is not scanned for packages.
+During CI, the builder SBOM and final-stage file subjects are composed into one
+SPDX predicate and attached to each platform image.
 
 As a result, vulnerability scanners may report vulnerabilities in the core
-PostgreSQL/base image for both the PostgreSQL image and the extension image.
-Those findings describe the SBOM scope and do not mean that the extension image
-contains a second PostgreSQL runtime. The final extension filesystem remains a
-minimal `scratch` image containing only the extension payload.
+PostgreSQL/base image for the extension image. Those findings describe the
+package scope and do not mean that the extension image contains a second
+PostgreSQL runtime. The final extension filesystem remains a minimal `scratch`
+image containing only the extension payload.
 
 ## Image catalogs
 

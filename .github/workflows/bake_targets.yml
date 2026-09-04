@@ -66,12 +66,91 @@ jobs:
         run: |
           echo "images=$(jq -c '[ .[]."image.name" | split(",")[] | select(test("[0-9]{12}")) ]' <<< "$BUILD_METADATA")" >>  "$GITHUB_OUTPUT"
 
-      # Even if we're testing we sign the images, so we can push them to production later if that's required
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         # See https://github.blog/security/supply-chain-security/safeguard-container-signing-capability-actions/
         # and https://github.com/actions/starter-workflows/blob/main/ci/docker-publish.yml for more details on
         # how to use cosign.
+
+      - name: Compose and attach SBOMs
+        env:
+          EXTENSION_NAME: ${{ inputs.extension_name }}
+          IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
+        run: |
+          set -Eeuo pipefail
+          python3 scripts/test_compose_sbom.py
+
+          # The pushed bake uses the normal multi-platform image exporter. A
+          # local exporter cannot write a manifest list, so generate the
+          # intermediate SBOM once per resolved target and platform.
+          export environment=testing
+          export registry="${IMAGE_REGISTRY}"
+          working_directory="${RUNNER_TEMP}/extension-sbom"
+          mkdir -p "${working_directory}/predicates"
+          : > "${working_directory}/manifest.tsv"
+
+          bake_files=(-f docker-bake.hcl -f "${EXTENSION_NAME}/metadata.hcl")
+          bake_definition="${working_directory}/bake.json"
+          docker buildx bake "${bake_files[@]}" --print > "${bake_definition}"
+
+          mapfile -t bake_targets < <(jq -r '.target | keys[]' "${bake_definition}")
+          test "${#bake_targets[@]}" -gt 0
+
+          for bake_target in "${bake_targets[@]}"; do
+            image=$(jq -r --arg target "${bake_target}" '.target[$target].tags[0]' "${bake_definition}")
+            test -n "${image}" && test "${image}" != "null"
+
+            for platform in linux/amd64 linux/arm64; do
+              platform_name=${platform//\//-}
+              output_directory="${working_directory}/${bake_target}-${platform_name}"
+              mkdir -p "${output_directory}"
+
+              docker buildx bake "${bake_files[@]}" "${bake_target}" \
+                --set "*.platform=${platform}" \
+                --set "*.output=type=local,dest=${output_directory}" \
+                --set "*.attest=type=sbom" \
+                --progress plain
+
+              builder_sbom="${output_directory}/sbom-builder.spdx.json"
+              final_sbom="${output_directory}/sbom.spdx.json"
+              test -s "${builder_sbom}"
+              test -s "${final_sbom}"
+
+              ./scripts/compose_sbom.py \
+                --builder-sbom "${builder_sbom}" \
+                --final-sbom "${final_sbom}" \
+                --output "${working_directory}/predicates/${bake_target}-${platform_name}/extension-sbom.spdx.json"
+              composed_sbom="${working_directory}/predicates/${bake_target}-${platform_name}/extension-sbom.spdx.json"
+
+              architecture=${platform#*/}
+              digest=$(docker buildx imagetools inspect "${image}" --raw | \
+                jq -r --arg architecture "${architecture}" '
+                  [.manifests[] |
+                   select(.platform.os == "linux" and .platform.architecture == $architecture) |
+                   .digest] | first // empty')
+              test -n "${digest}" && test "${digest}" != "null"
+
+              cosign attest --yes \
+                --type https://spdx.dev/Document \
+                --predicate "${composed_sbom}" \
+                "${image}@${digest}"
+
+              printf '%s\t%s\tpredicates/%s-%s/extension-sbom.spdx.json\n' \
+                "${image}" "${architecture}" "${bake_target}" "${platform_name}" \
+                >> "${working_directory}/manifest.tsv"
+            done
+          done
+
+      - name: Upload composed SBOMs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: extension-sboms-${{ inputs.extension_name }}-${{ github.run_id }}
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/extension-sbom/manifest.tsv
+            ${{ runner.temp }}/extension-sbom/predicates
+
+      # Even if we're testing we sign the images, so we can push them to production later if that's required
       - name: Sign images
         env:
           BUILD_METADATA: ${{ steps.build.outputs.metadata }}
@@ -205,3 +284,35 @@ jobs:
           bake_build_metadata: "${{ needs.testbuild.outputs.metadata }}"
           registry_user: ${{ github.actor }}
           registry_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download composed SBOMs
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: extension-sboms-${{ inputs.extension_name }}-${{ github.run_id }}
+          path: extension-sboms
+
+      - name: Install cosign for promoted SBOMs
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Attach SBOMs to production images
+        run: |
+          set -Eeuo pipefail
+
+          while IFS=$'\t' read -r testing_image architecture predicate_path; do
+            test -n "${testing_image}"
+            production_image="${testing_image/-testing:/:}"
+            predicate="extension-sboms/${predicate_path}"
+            test -s "${predicate}"
+
+            digest=$(docker buildx imagetools inspect "${production_image}" --raw | \
+              jq -r --arg architecture "${architecture}" '
+                [.manifests[] |
+                 select(.platform.os == "linux" and .platform.architecture == $architecture) |
+                 .digest] | first // empty')
+            test -n "${digest}" && test "${digest}" != "null"
+
+            cosign attest --yes \
+              --type https://spdx.dev/Document \
+              --predicate "${predicate}" \
+              "${production_image}@${digest}"
+          done < extension-sboms/manifest.tsv
