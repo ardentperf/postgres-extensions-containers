@@ -77,6 +77,16 @@
   ],
   "packageRules": [
     {
+      "description": "require manual review for mysql-fdw updates",
+      "matchPackageNames": [
+        "postgresql-18-mysql-fdw"
+      ],
+      "automerge": false,
+      "prBodyNotes": [
+        "⚠️ Current MySQL FDW SQL extension version is 1.2. It changed from 1.1 to 1.2 on October 14, 2022 (first included in package version 2.9.0). Manually check the upstream repository to see whether the SQL extension version changed before merging this package update. If it changed, manually update mysql-fdw/README.md, mysql-fdw/metadata.hcl, and renovate.json."
+      ]
+    },
+    {
       "matchDatasources": [
         "github-tags"
       ],
