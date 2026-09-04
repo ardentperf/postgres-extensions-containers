@@ -40,7 +40,7 @@
       "datasourceTemplate": "deb",
       "currentValueTemplate": "{{{replace '-' ':' currentValue}}}",
       "extractVersionTemplate": "^(?<version>[^~+\\-]+)",
-      "autoReplaceStringTemplate": "# renovate: suite={{{suite}}} depName={{{depName}}}\\n        reference: ghcr.io/cnpg-extensions/{{{imageName}}}:{{{replace ':' '-' newValue}}}-{{{pgVersion}}}-{{{distro}}}"
+      "autoReplaceStringTemplate": "# renovate: suite={{{suite}}} depName={{{depName}}}\\n        reference: ghcr.io/cnpg-extensions/{{{imageName}}}:{{{replace ':' '-' (replace '~.*' '' (replace '-.*' '' newValue))}}}-{{{pgVersion}}}-{{{distro}}}"
     },
     {
       "description": "updates the container image SQL version in the README.md files",
