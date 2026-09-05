@@ -121,7 +121,6 @@ jobs:
                 --builder-sbom "${builder_sbom}" \
                 --extension-name "${EXTENSION_NAME}" \
                 --output "${working_directory}/predicates/${bake_target}-${platform_name}/extension-sbom.spdx.json"
-              composed_sbom="${working_directory}/predicates/${bake_target}-${platform_name}/extension-sbom.spdx.json"
 
               architecture=${platform#*/}
               digest=$(docker buildx imagetools inspect "${image}" --raw | \
@@ -133,7 +132,7 @@ jobs:
 
               cosign attest --yes \
                 --type https://spdx.dev/Document \
-                --predicate "${composed_sbom}" \
+                --predicate "${working_directory}/predicates/${bake_target}-${platform_name}/extension-sbom.spdx.json" \
                 "${image}@${digest}"
 
               printf '%s\t%s\tpredicates/%s-%s/extension-sbom.spdx.json\n' \
