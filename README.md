@@ -212,6 +212,14 @@ skopeo inspect docker://<image> | jq '.Labels'
 
 ### SBOM scope
 
+> [!WARNING]
+> The published SBOM and all SBOM/provenance annotations are a beta,
+> provisional implementation. They are not a complete or final OpenSSF
+> compliance claim. Their schema and fields may change or be removed as the
+> project moves toward stronger and more complete OpenSSF compliance. A
+> signature binds the exact bytes produced, but does not make provisional
+> contents or fields stable.
+
 The published SBOM is composed from the SPDX predicate produced for the
 post-install `builder` stage and the final-image file subjects in that
 attestation. It contains packages that own files shipped in the final image,
