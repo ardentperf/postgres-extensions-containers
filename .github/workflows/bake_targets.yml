@@ -115,6 +115,8 @@ jobs:
               output_directory="${working_directory}/${bake_target}-${platform_name}"
               mkdir -p "${output_directory}"
 
+              # BuildKit reuses the pushed build's cached layers; this adds only
+              # the local SBOM generation and export work.
               docker buildx bake "${bake_files[@]}" "${bake_target}" \
                 --set "*.platform=${platform}" \
                 --set "*.dockerfile=.sbom.Dockerfile" \
