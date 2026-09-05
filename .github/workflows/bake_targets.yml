@@ -91,8 +91,7 @@ jobs:
 
           # Inject the SBOM stage selector into a temporary Dockerfile.
           sbom_dockerfile="${EXTENSION_NAME}/.sbom.Dockerfile"
-          cp "${EXTENSION_NAME}/Dockerfile" "${sbom_dockerfile}"
-          sed -i '1iARG BUILDKIT_SBOM_SCAN_STAGE=builder' "${sbom_dockerfile}"
+          sed '1iARG BUILDKIT_SBOM_SCAN_STAGE=builder' "${EXTENSION_NAME}/Dockerfile" > "${sbom_dockerfile}"
 
           mapfile -t bake_targets < <(jq -r '.target | keys[]' "${bake_definition}")
           test "${#bake_targets[@]}" -gt 0
