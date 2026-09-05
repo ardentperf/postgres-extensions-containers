@@ -93,7 +93,6 @@ jobs:
           sbom_dockerfile="${EXTENSION_NAME}/.sbom.Dockerfile"
           cp "${EXTENSION_NAME}/Dockerfile" "${sbom_dockerfile}"
           sed -i '1iARG BUILDKIT_SBOM_SCAN_STAGE=builder' "${sbom_dockerfile}"
-          trap 'rm -f "${sbom_dockerfile}"' EXIT
 
           mapfile -t bake_targets < <(jq -r '.target | keys[]' "${bake_definition}")
           test "${#bake_targets[@]}" -gt 0
