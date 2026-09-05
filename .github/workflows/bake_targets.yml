@@ -101,7 +101,7 @@ jobs:
 
           mapfile -t bake_targets < <(jq -r '.target | keys[]' "${bake_definition}")
           test "${#bake_targets[@]}" -gt 0
-          attestation_records=()
+          attestation_records=""
 
           for bake_target in "${bake_targets[@]}"; do
             image=$(jq -r --arg target "${bake_target}" '.target[$target].tags[0]' "${bake_definition}")
@@ -206,8 +206,6 @@ jobs:
             }
           }
           EOF
-            # The readable heredoc is deliberately checked before the
-            # composer consumes it. jq -e also rejects malformed JSON.
             jq -e . "${provenance_manifest}" > /dev/null
             jq -e --arg namespace "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1" \
               --arg index_digest "${image_index_digest}" \
@@ -241,20 +239,33 @@ jobs:
                 (.comment | startswith($namespace + " ")))' \
               "${predicate}"
 
-            attestation_records+=("$(jq -cn \
-              --arg target "${bake_target}" \
-              --arg testing_image "${image}" \
-              --arg production_image "${image/-testing:/:}" \
-              --arg testing_subject "${image%:*}" \
-              --arg production_subject "${image%%-testing:*}" \
-              --arg index_digest "${image_index_digest}" \
-              --arg predicate_path "predicates/${bake_target}/extension-sbom.spdx.json" \
-              '{target: $target, testingImage: $testing_image, testingSubject: $testing_subject,
-                productionImage: $production_image, productionSubject: $production_subject,
-                indexDigest: $index_digest, predicatePath: $predicate_path}')")
+            attestation_records+="$(cat <<EOF
+          {
+            "target": "${bake_target}",
+            "testingImage": "${image}",
+            "testingSubject": "${image%:*}",
+            "productionImage": "${image/-testing:/:}",
+            "productionSubject": "${image%%-testing:*}",
+            "indexDigest": "${image_index_digest}",
+            "predicatePath": "predicates/${bake_target}/extension-sbom.spdx.json"
+          }
+          EOF
+          )"
+            attestation_records+=$'\n'
           done
 
-          printf '%s\n' "${attestation_records[@]}" | jq -s . > "${working_directory}/attestation-manifest.json"
+          jq -e -s --argjson expected_count "${#bake_targets[@]}" \
+            'type == "array" and length == $expected_count' \
+            <<< "${attestation_records}" > "${working_directory}/attestation-manifest.json"
+          jq -e 'all(.[];
+            (.target | type == "string" and length > 0) and
+            (.testingImage | type == "string" and length > 0) and
+            (.testingSubject | type == "string" and length > 0) and
+            (.productionImage | type == "string" and length > 0) and
+            (.productionSubject | type == "string" and length > 0) and
+            (.indexDigest | type == "string" and test("^sha256:[0-9a-f]{64}$")) and
+            (.predicatePath | type == "string" and length > 0))' \
+            "${working_directory}/attestation-manifest.json"
           echo "manifest=$(jq -c . "${working_directory}/attestation-manifest.json")" >> "$GITHUB_OUTPUT"
 
       - name: Upload composed SBOMs
