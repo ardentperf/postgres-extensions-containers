@@ -95,15 +95,6 @@ jobs:
           bake_files=(-f docker-bake.hcl -f "${EXTENSION_NAME}/metadata.hcl")
           bake_definition="${working_directory}/bake.json"
           docker buildx bake "${bake_files[@]}" --print > "${bake_definition}"
-          build_definition_sha256=$(sha256sum "${bake_definition}" | awk '{print $1}')
-          annotation_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          composer_revision=$(git rev-parse HEAD)
-          python_version=$(python3 --version 2>&1)
-          docker_version=$(docker --version)
-          buildx_version=$(docker buildx version)
-          jq_version=$(jq --version)
-          cosign_version=$(cosign version 2>&1 | sed -n '1p')
-          actions_attest_version="actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6"
 
           # Inject the SBOM stage selector into a temporary Dockerfile.
           sed '1iARG BUILDKIT_SBOM_SCAN_STAGE=builder' "${EXTENSION_NAME}/Dockerfile" > "${EXTENSION_NAME}/.sbom.Dockerfile"
@@ -185,10 +176,10 @@ jobs:
             cat > "${provenance_manifest}" <<EOF
           {
             "schemaVersion": "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1",
-            "annotationDate": "${annotation_date}",
+            "annotationDate": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "inputs": {
               "builderSboms": ${builder_sbom_records_json},
-              "buildDefinition": {"sha256": "${build_definition_sha256}"}
+              "buildDefinition": {"sha256": "$(sha256sum "${bake_definition}" | awk '{print $1}')"}
             },
             "image": {
               "sourceCommit": "${GITHUB_SHA}",
@@ -197,16 +188,16 @@ jobs:
               "indexDigest": "${image_index_digest}"
             },
             "composer": {
-              "revision": "${composer_revision}",
+              "revision": "$(git rev-parse HEAD)",
               "command": "${composer_command}",
-              "interpreter": "${python_version}",
+              "interpreter": "$(python3 --version 2>&1)",
               "toolVersions": {
-                "python": "${python_version}",
-                "docker": "${docker_version}",
-                "buildx": "${buildx_version}",
-                "jq": "${jq_version}",
-                "cosign": "${cosign_version}",
-                "actionsAttest": "${actions_attest_version}"
+                "python": "$(python3 --version 2>&1)",
+                "docker": "$(docker --version)",
+                "buildx": "$(docker buildx version)",
+                "jq": "$(jq --version)",
+                "cosign": "$(cosign version 2>&1 | sed -n '1p')",
+                "actionsAttest": "actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6"
               }
             },
             "workflow": {
