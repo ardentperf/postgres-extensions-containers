@@ -215,7 +215,7 @@ skopeo inspect docker://<image> | jq '.Labels'
 The published SBOM is composed from the SPDX predicate produced for the
 post-install `builder` stage and the final-image file subjects in that
 attestation. It contains packages that own files shipped in the final image,
-plus an extension-specific payload package for files without a package owner.
+plus an extension-specific artifacts package for files without a package owner.
 The file list is limited to files actually shipped in the image, including
 copied system libraries and license files. Relationships are trimmed and
 rewritten to match the resulting package and file lists.

@@ -73,7 +73,7 @@ def extension_package(extension_name: str) -> dict[str, Any]:
         "filesAnalyzed": True,
         "licenseConcluded": "NOASSERTION",
         "licenseDeclared": "NOASSERTION",
-        "name": f"{extension_name}-extension-payload",
+        "name": f"{extension_name}-extension-artifacts",
         "supplier": "NOASSERTION",
         "versionInfo": "NOASSERTION",
     }

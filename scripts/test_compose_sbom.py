@@ -83,7 +83,7 @@ class ComposeSbomTest(unittest.TestCase):
 
         self.assertEqual(
             [package["name"] for package in output["packages"]],
-            ["extension", "plr-extension-payload"],
+            ["extension", "plr-extension-artifacts"],
         )
         self.assertEqual(
             [file["fileName"] for file in output["files"]],
@@ -189,7 +189,7 @@ class ComposeSbomTest(unittest.TestCase):
         ])
 
         output = compose(document, extension_name="plr")
-        self.assertEqual([item["name"] for item in output["packages"]], ["plr-extension-payload"])
+        self.assertEqual([item["name"] for item in output["packages"]], ["plr-extension-artifacts"])
 
     def test_license_path_selects_named_package(self):
         document = builder_document([
