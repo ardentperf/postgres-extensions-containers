@@ -146,21 +146,9 @@ jobs:
                 --output "${predicate}"
 
               test -s "${predicate}"
-              builder_sbom_records+=("$(cat <<EOF
-          {
-            "platform": "${platform}",
-            "sha256": "$(sha256sum "${builder_sbom}" | awk '{print $1}')"
-          }
-          EOF
-          )")
+              builder_sbom_records+=("{\"platform\":\"${platform}\",\"sha256\":\"$(sha256sum "${builder_sbom}" | awk '{print $1}')\"}")
               composed_predicate_paths+=("${predicate}")
-              platform_manifest_records+=("$(cat <<EOF
-          {
-            "platform": "${platform}",
-            "manifestDigest": "${image_manifest_digest}"
-          }
-          EOF
-          )")
+              platform_manifest_records+=("{\"platform\":\"${platform}\",\"manifestDigest\":\"${image_manifest_digest}\"}")
               platforms+=("${platform}")
             done
 
@@ -191,17 +179,13 @@ jobs:
             "schemaVersion": "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1",
             "annotationDate": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "inputs": {
-              "builderSboms": [
-          $(IFS=,; printf '%s' "${builder_sbom_records[*]}")
-              ],
+              "builderSboms": [$(IFS=,; printf '%s' "${builder_sbom_records[*]}")],
               "buildDefinition": {"sha256": "$(sha256sum "${bake_definition}" | awk '{print $1}')"}
             },
             "image": {
               "sourceCommit": "${GITHUB_SHA}",
               "target": "${bake_target}",
-              "platforms": [
-          $(IFS=,; printf '%s' "${platform_manifest_records[*]}")
-              ],
+              "platforms": [$(IFS=,; printf '%s' "${platform_manifest_records[*]}")],
               "indexDigest": "${image_index_digest}"
             },
             "composer": {
