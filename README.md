@@ -183,7 +183,7 @@ other tools to identify the base PostgreSQL version and OS distribution.
 | `io.cloudnativepg.image.base.os`      | Operating system distribution    | `bookworm`                                              |
 | `io.cloudnativepg.image.sql.version`  | PostgreSQL extension SQL version | `1.6`                                                   |
 | `io.cloudnativepg.image.sbom.scope`   | SBOM scan scope                  | `final-packages-final-files`                             |
-| `io.cloudnativepg.image.sbom.includes` | SBOM contents                  | `Final file packages, referenced dependencies, and extension-owned artifacts` |
+| `io.cloudnativepg.image.sbom.includes` | SBOM contents                  | `Packages owning final files and extension-owned artifacts` |
 
 ### Standard OCI Labels
 
@@ -214,26 +214,22 @@ skopeo inspect docker://<image> | jq '.Labels'
 
 The published SBOM is composed from the SPDX predicate produced for the
 post-install `builder` stage and the final-image file subjects in that
-attestation. The subjects are matched to builder files by SHA-256 checksum.
-When a checksum is shared, package-owned files and the closest path suffix are
-preferred. A file under `licenses/<package>/` is assigned to that package when
-the package name is unambiguous. Unmatched or ambiguous files are represented
-by an `extension-payload` package instead of being assigned to an unverified
-package.
+attestation. It contains packages that own files shipped in the final image,
+plus an `extension-payload` package for files without a package owner. The file
+list is limited to files actually shipped in the image, including copied system
+libraries and license files. Relationships are trimmed and rewritten to match
+the resulting package and file lists.
 
-The package list contains packages that own the matched final files, followed
-by their transitive dependencies from SPDX `DEPENDENCY_OF` or `DEPENDS_ON`
-relationships. This includes relevant PostgreSQL and operating-system
-packages from the base image. Unreferenced build-only packages are excluded.
-The file list is limited to files actually shipped in the image, including
-copied system libraries and license files. Relationships are trimmed and
-rewritten to match the resulting package and file lists.
+Because ownership is based on shipped files, the SBOM can include PostgreSQL
+and operating-system packages copied from the base image. Packages with no
+files in the final image are not included merely because another package refers
+to them.
 
 The final scratch stage is not scanned or read as an SBOM. During CI, the
 builder SBOM and its final-image file subjects are composed into one SPDX
 predicate and attached to each platform image. This keeps the SBOM focused on
-the extension payload while still making system-library, PostgreSQL, and
-package-dependency vulnerabilities visible.
+the extension payload while still making vulnerabilities in shipped
+system-library and PostgreSQL packages visible.
 
 ## Image catalogs
 

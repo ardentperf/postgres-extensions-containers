@@ -15,11 +15,6 @@ from pathlib import Path
 from typing import Any
 
 
-DEPENDENCY_RELATIONSHIP_TYPES = {
-    "DEPENDENCY_OF",
-    "DEPENDS_ON",
-}
-
 EXTENSION_PACKAGE_ID = "SPDXRef-Package-extension-payload"
 
 
@@ -199,26 +194,6 @@ def compose(builder_document: dict[str, Any], *,
         owned_final_ids.update(final_ids_for_source)
 
     extension_file_ids = final_ids - owned_final_ids
-
-    dependencies: defaultdict[str, set[str]] = defaultdict(set)
-    for relationship in relationships:
-        relationship_type = relationship["relationshipType"]
-        element_id = relationship["spdxElementId"]
-        related_id = relationship["relatedSpdxElement"]
-        if relationship_type in DEPENDENCY_RELATIONSHIP_TYPES:
-            if element_id in package_ids and related_id in package_ids:
-                if relationship_type == "DEPENDS_ON":
-                    dependencies[element_id].add(related_id)
-                else:
-                    dependencies[related_id].add(element_id)
-
-    pending_packages = list(retained_package_ids)
-    while pending_packages:
-        package_id = pending_packages.pop()
-        for dependency_id in dependencies[package_id]:
-            if dependency_id not in retained_package_ids:
-                retained_package_ids.add(dependency_id)
-                pending_packages.append(dependency_id)
 
     if extension_file_ids:
         retained_package_ids.add(EXTENSION_PACKAGE_ID)

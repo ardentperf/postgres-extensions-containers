@@ -75,7 +75,7 @@ def builder_document(subjects):
 
 
 class ComposeSbomTest(unittest.TestCase):
-    def test_final_packages_and_referenced_dependencies_are_retained(self):
+    def test_final_packages_are_retained_and_unshipped_packages_are_removed(self):
         output = compose(builder_document([
             {"name": "lib/ext.so", "digest": {"sha256": "extension"}},
             {"name": "generated/artifact", "digest": {"sha256": "generated"}},
@@ -83,7 +83,7 @@ class ComposeSbomTest(unittest.TestCase):
 
         self.assertEqual(
             [package["name"] for package in output["packages"]],
-            ["base", "extension", "extension-payload"],
+            ["extension", "extension-payload"],
         )
         self.assertEqual(
             [file["fileName"] for file in output["files"]],
@@ -93,9 +93,10 @@ class ComposeSbomTest(unittest.TestCase):
             (rel["relationshipType"], rel["spdxElementId"], rel["relatedSpdxElement"])
             for rel in output["relationships"]
         }
-        self.assertIn(("DEPENDENCY_OF", "SPDXRef-Package-base", "SPDXRef-Package-extension"), relationships)
         self.assertIn(("CONTAINS", "SPDXRef-Package-extension", output["files"][0]["SPDXID"]), relationships)
         self.assertIn(("CONTAINS", "SPDXRef-Package-extension-payload", output["files"][1]["SPDXID"]), relationships)
+        self.assertNotIn("base", {package["name"] for package in output["packages"]})
+        self.assertNotIn(("DEPENDENCY_OF", "SPDXRef-Package-base", "SPDXRef-Package-extension"), relationships)
         self.assertNotIn(("CONTAINS", "SPDXRef-DocumentRoot-Directory-sbom", "SPDXRef-Package-extension"), relationships)
         self.assertNotIn("usr/bin/cc", json.dumps(output))
 
