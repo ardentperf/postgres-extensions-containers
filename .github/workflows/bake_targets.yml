@@ -140,62 +140,44 @@ jobs:
               provenance_manifest="${working_directory}/manifests/${bake_target}-${platform_name}.json"
               mkdir -p "${predicate_directory}"
               composer_command="./scripts/compose_sbom.py --builder-sbom ${builder_sbom} --extension-name ${EXTENSION_NAME} --provenance-manifest ${provenance_manifest} --output ${predicate}"
-              jq -n \
-                --arg annotation_date "${annotation_date}" \
-                --arg builder_sbom_sha256 "${builder_sbom_sha256}" \
-                --arg build_definition_sha256 "${build_definition_sha256}" \
-                --arg source_commit "${GITHUB_SHA}" \
-                --arg target "${bake_target}" \
-                --arg platform "${platform}" \
-                --arg image_manifest_digest "${image_manifest_digest}" \
-                --arg composer_revision "${composer_revision}" \
-                --arg composer_command "${composer_command}" \
-                --arg python_version "${python_version}" \
-                --arg docker_version "${docker_version}" \
-                --arg buildx_version "${buildx_version}" \
-                --arg jq_version "${jq_version}" \
-                --arg cosign_version "${cosign_version}" \
-                --arg repository "${GITHUB_REPOSITORY}" \
-                --arg workflow "${GITHUB_WORKFLOW}" \
-                --arg ref "${GITHUB_REF}" \
-                --arg run_id "${GITHUB_RUN_ID}" \
-                --arg run_attempt "${GITHUB_RUN_ATTEMPT}" \
-                --arg actor "${GITHUB_ACTOR}" \
-                '{
-                  schemaVersion: "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1",
-                  annotationDate: $annotation_date,
-                  inputs: {
-                    builderSbom: {sha256: $builder_sbom_sha256},
-                    buildDefinition: {sha256: $build_definition_sha256}
-                  },
-                  image: {
-                    sourceCommit: $source_commit,
-                    target: $target,
-                    platform: $platform,
-                    manifestDigest: $image_manifest_digest
-                  },
-                  composer: {
-                    revision: $composer_revision,
-                    command: $composer_command,
-                    interpreter: $python_version,
-                    toolVersions: {
-                      python: $python_version,
-                      docker: $docker_version,
-                      buildx: $buildx_version,
-                      jq: $jq_version,
-                      cosign: $cosign_version
-                    }
-                  },
-                  workflow: {
-                    repository: $repository,
-                    name: $workflow,
-                    ref: $ref,
-                    runId: $run_id,
-                    runAttempt: $run_attempt,
-                    actor: $actor
-                  }
-                }' > "${provenance_manifest}"
+              cat > "${provenance_manifest}" <<EOF
+          {
+            "schemaVersion": "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1",
+            "annotationDate": "${annotation_date}",
+            "inputs": {
+              "builderSbom": {"sha256": "${builder_sbom_sha256}"},
+              "buildDefinition": {"sha256": "${build_definition_sha256}"}
+            },
+            "image": {
+              "sourceCommit": "${GITHUB_SHA}",
+              "target": "${bake_target}",
+              "platform": "${platform}",
+              "manifestDigest": "${image_manifest_digest}"
+            },
+            "composer": {
+              "revision": "${composer_revision}",
+              "command": "${composer_command}",
+              "interpreter": "${python_version}",
+              "toolVersions": {
+                "python": "${python_version}",
+                "docker": "${docker_version}",
+                "buildx": "${buildx_version}",
+                "jq": "${jq_version}",
+                "cosign": "${cosign_version}"
+              }
+            },
+            "workflow": {
+              "repository": "${GITHUB_REPOSITORY}",
+              "name": "${GITHUB_WORKFLOW}",
+              "ref": "${GITHUB_REF}",
+              "runId": "${GITHUB_RUN_ID}",
+              "runAttempt": "${GITHUB_RUN_ATTEMPT}",
+              "actor": "${GITHUB_ACTOR}"
+            }
+          }
+          EOF
               test -s "${provenance_manifest}"
+              jq -e . "${provenance_manifest}" > /dev/null
               jq -e --arg namespace "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1" \
                 --arg builder_sbom_sha256 "${builder_sbom_sha256}" \
                 --arg build_definition_sha256 "${build_definition_sha256}" \
