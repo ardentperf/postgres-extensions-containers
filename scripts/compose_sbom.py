@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""Compose the final-payload SPDX predicate.
-
-See README.md#sbom-scope for the composition rules.
-"""
+"""See README.md#sbom-scope for the composition rules."""
 
 from __future__ import annotations
 

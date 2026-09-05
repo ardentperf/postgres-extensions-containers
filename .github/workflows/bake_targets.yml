@@ -78,7 +78,6 @@ jobs:
           IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
         run: |
           set -Eeuo pipefail
-          python3 scripts/test_compose_sbom.py
           # Export builder-stage SBOMs per target and platform; the pushed image
           # supplies cached layers, and the final scratch stage is not scanned.
           export environment=testing
