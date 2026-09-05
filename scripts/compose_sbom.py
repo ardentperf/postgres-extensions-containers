@@ -87,16 +87,28 @@ def final_files(document: dict[str, Any], path: Path) -> list[dict[str, str]]:
     return files
 
 
-def path_score(candidate: str, final_name: str) -> int:
-    candidate = candidate.lstrip("/")
-    final_name = final_name.lstrip("/")
-    if candidate == final_name:
-        return 0
-    if candidate.endswith(f"/{final_name}"):
-        return 1
-    if candidate.rsplit("/", 1)[-1] == final_name.rsplit("/", 1)[-1]:
-        return 2
-    return 3
+def path_score(candidate: str, final_name: str) -> tuple[int, int]:
+    """Prefer an exact path, then the longest shared path suffix."""
+
+    candidate_parts = tuple(part for part in candidate.lstrip("/").split("/") if part)
+    final_parts = tuple(part for part in final_name.lstrip("/").split("/") if part)
+    if candidate_parts == final_parts:
+        return 0, 0
+
+    common_suffix = 0
+    for candidate_part, final_part in zip(reversed(candidate_parts), reversed(final_parts)):
+        if candidate_part != final_part:
+            break
+        common_suffix += 1
+    if common_suffix > 1:
+        return 1, -common_suffix
+    if common_suffix == 1:
+        return 2, 0
+    return 3, 0
+
+
+def is_license_path(name: str) -> bool:
+    return name.lstrip("/").startswith("licenses/")
 
 
 def file_id(name: str, algorithm: str, value: str) -> str:
@@ -219,14 +231,23 @@ def compose(builder_document: dict[str, Any], *,
         ]
         candidates = owned_candidates or candidates
         best_score = min(path_score(record["fileName"], final_record["name"]) for record in candidates)
-        # If identical content occurs in several packages, retain all matching
-        # package/file relationships at the best path match. This avoids making
-        # package ownership depend on dictionary order.
         selected = [
             record for record in candidates
             if path_score(record["fileName"], final_record["name"]) == best_score
         ]
         selected.sort(key=lambda record: record["SPDXID"])
+        source_names = {record["fileName"].lstrip("/") for record in selected}
+        if len(source_names) > 1 or (
+            best_score[0] == 2 and is_license_path(final_record["name"])
+        ):
+            # Identical bytes do not prove that different source paths are the
+            # same file. License destinations also encode the package name, so
+            # a basename-only match to another source package is not evidence.
+            output_record = extension_file(final_record)
+            composed_files.append(output_record)
+            final_ids.add(output_record["SPDXID"])
+            continue
+
         source = selected[0]
         new_id = file_id(final_record["name"], final_record["algorithm"], final_record["value"])
         output_record = copy.deepcopy(source)
@@ -235,6 +256,8 @@ def compose(builder_document: dict[str, Any], *,
         composed_files.append(output_record)
         final_ids.add(new_id)
         for record in selected:
+            # Preserve all owners of this one source file, while excluding
+            # owners of other files that merely share its checksum.
             source_to_final[record["SPDXID"]].add(new_id)
 
     # A final file can be the only evidence that a copied system library is

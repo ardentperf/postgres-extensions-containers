@@ -99,6 +99,119 @@ class ComposeSbomTest(unittest.TestCase):
         self.assertNotIn(("CONTAINS", "SPDXRef-DocumentRoot-Directory-sbom", "SPDXRef-Package-extension"), relationships)
         self.assertNotIn("usr/bin/cc", json.dumps(output))
 
+    def test_duplicate_checksum_prefers_path_and_preserves_same_file_owners(self):
+        document = builder_document([
+            {"name": "licenses/libblas3/copyright", "digest": {"sha256": "copyright"}},
+        ])
+        predicate = document["predicate"]
+        predicate["packages"].extend([
+            package("SPDXRef-Package-libblas3", "libblas3", "1", "pkg:generic/libblas3@1"),
+            package("SPDXRef-Package-liblapack3", "liblapack3", "1", "pkg:generic/liblapack3@1"),
+            package("SPDXRef-Package-shared-license", "shared-license", "1", "pkg:generic/shared-license@1"),
+        ])
+        predicate["files"].extend([
+            {
+                "SPDXID": "SPDXRef-File-libblas3-copyright",
+                "fileName": "usr/share/doc/libblas3/copyright",
+                "checksums": checksum("copyright"),
+            },
+            {
+                "SPDXID": "SPDXRef-File-liblapack3-copyright",
+                "fileName": "usr/share/doc/liblapack3/copyright",
+                "checksums": checksum("copyright"),
+            },
+        ])
+        predicate["relationships"].extend([
+            {
+                "spdxElementId": "SPDXRef-Package-libblas3",
+                "relationshipType": "CONTAINS",
+                "relatedSpdxElement": "SPDXRef-File-libblas3-copyright",
+            },
+            {
+                "spdxElementId": "SPDXRef-Package-shared-license",
+                "relationshipType": "CONTAINS",
+                "relatedSpdxElement": "SPDXRef-File-libblas3-copyright",
+            },
+            {
+                "spdxElementId": "SPDXRef-Package-liblapack3",
+                "relationshipType": "CONTAINS",
+                "relatedSpdxElement": "SPDXRef-File-liblapack3-copyright",
+            },
+        ])
+
+        output = compose(document)
+        package_names = {item["name"] for item in output["packages"]}
+        self.assertIn("libblas3", package_names)
+        self.assertIn("shared-license", package_names)
+        self.assertNotIn("liblapack3", package_names)
+        relationships = {
+            (rel["relationshipType"], rel["spdxElementId"], rel["relatedSpdxElement"])
+            for rel in output["relationships"]
+        }
+        file_id = output["files"][0]["SPDXID"]
+        self.assertIn(("CONTAINS", "SPDXRef-Package-libblas3", file_id), relationships)
+        self.assertIn(("CONTAINS", "SPDXRef-Package-shared-license", file_id), relationships)
+        self.assertNotIn(("CONTAINS", "SPDXRef-Package-liblapack3", file_id), relationships)
+
+    def test_ambiguous_basename_match_is_extension_owned(self):
+        document = builder_document([
+            {"name": "licenses/unknown/copyright", "digest": {"sha256": "copyright"}},
+        ])
+        predicate = document["predicate"]
+        predicate["packages"].extend([
+            package("SPDXRef-Package-left", "left", "1", "pkg:generic/left@1"),
+            package("SPDXRef-Package-right", "right", "1", "pkg:generic/right@1"),
+        ])
+        predicate["files"].extend([
+            {
+                "SPDXID": "SPDXRef-File-left-copyright",
+                "fileName": "usr/share/doc/left/copyright",
+                "checksums": checksum("copyright"),
+            },
+            {
+                "SPDXID": "SPDXRef-File-right-copyright",
+                "fileName": "usr/share/doc/right/copyright",
+                "checksums": checksum("copyright"),
+            },
+        ])
+        predicate["relationships"].extend([
+            {
+                "spdxElementId": "SPDXRef-Package-left",
+                "relationshipType": "CONTAINS",
+                "relatedSpdxElement": "SPDXRef-File-left-copyright",
+            },
+            {
+                "spdxElementId": "SPDXRef-Package-right",
+                "relationshipType": "CONTAINS",
+                "relatedSpdxElement": "SPDXRef-File-right-copyright",
+            },
+        ])
+
+        output = compose(document)
+        self.assertEqual([item["name"] for item in output["packages"]], ["extension-payload"])
+
+    def test_license_basename_match_to_other_package_is_extension_owned(self):
+        document = builder_document([
+            {"name": "licenses/libgomp1/copyright", "digest": {"sha256": "copyright"}},
+        ])
+        predicate = document["predicate"]
+        predicate["packages"].append(
+            package("SPDXRef-Package-gcc", "gcc-14-base", "1", "pkg:generic/gcc-14-base@1")
+        )
+        predicate["files"].append({
+            "SPDXID": "SPDXRef-File-gcc-copyright",
+            "fileName": "usr/share/doc/gcc-14-base/copyright",
+            "checksums": checksum("copyright"),
+        })
+        predicate["relationships"].append({
+            "spdxElementId": "SPDXRef-Package-gcc",
+            "relationshipType": "CONTAINS",
+            "relatedSpdxElement": "SPDXRef-File-gcc-copyright",
+        })
+
+        output = compose(document)
+        self.assertEqual([item["name"] for item in output["packages"]], ["extension-payload"])
+
     def test_registry_image_subject_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "image subject"):
             compose(builder_document([
