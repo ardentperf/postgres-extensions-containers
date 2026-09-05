@@ -220,6 +220,10 @@ skopeo inspect docker://<image> | jq '.Labels'
 > signature binds the exact bytes produced, but does not make provisional
 > contents or fields stable.
 
+Our goal is for this provisional data to be useful in the interim for license
+inventory and consumption by security scanners, while industry standards and
+industry build toolchains continue to mature in this space.
+
 The published SBOM is composed from the SPDX predicate produced for the
 post-install `builder` stage and the final-image file subjects in that
 attestation. It contains packages that own files shipped in the final image,
