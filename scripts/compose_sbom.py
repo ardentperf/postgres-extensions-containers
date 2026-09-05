@@ -12,7 +12,6 @@ inventory and its relationships.
 from __future__ import annotations
 
 import argparse
-import copy
 import hashlib
 import json
 import sys
@@ -31,10 +30,7 @@ EXTENSION_PACKAGE_ID = "SPDXRef-Package-extension-payload"
 
 def read_json(path: Path) -> dict[str, Any]:
     with path.open(encoding="utf-8") as stream:
-        value = json.load(stream)
-    if not isinstance(value, dict):
-        raise ValueError(f"{path} must contain a JSON object")
-    return value
+        return json.load(stream)
 
 
 def checksum_key(algorithm: str, value: str) -> tuple[str, str]:
@@ -44,31 +40,18 @@ def checksum_key(algorithm: str, value: str) -> tuple[str, str]:
 def final_files(document: dict[str, Any], path: Path) -> list[dict[str, str]]:
     """Return final file names and checksums from a BuildKit attestation."""
 
-    subjects = document.get("subject")
-    if not isinstance(subjects, list):
-        raise ValueError(f"{path}: expected a BuildKit attestation with a subject array")
-
     files: list[dict[str, str]] = []
-    for subject in subjects:
-        if not isinstance(subject, dict):
-            raise ValueError(f"{path}: every subject must be an object")
-        name = subject.get("name")
-        digests = subject.get("digest")
-        if not isinstance(name, str) or not name:
-            raise ValueError(f"{path}: every subject needs a name")
+    for subject in document["subject"]:
+        name = subject["name"]
         if name.startswith("pkg:"):
             raise ValueError(
                 f"{path}: subject {name!r} is an image subject; use a local-export SBOM"
             )
-        if not isinstance(digests, dict) or not digests:
-            raise ValueError(f"{path}: subject {name!r} needs a digest")
-        # BuildKit emits one digest. Prefer SHA256 if a producer emits more
-        # than one so matching remains stable across SPDX producers.
-        algorithm = "sha256" if "sha256" in digests else next(iter(digests))
-        value = digests.get(algorithm)
-        if not isinstance(value, str) or not value:
-            raise ValueError(f"{path}: subject {name!r} has an invalid digest")
-        files.append({"name": name.lstrip("/"), "algorithm": algorithm, "value": value})
+        files.append({
+            "name": name.lstrip("/"),
+            "algorithm": "sha256",
+            "value": subject["digest"]["sha256"],
+        })
     if not files:
         raise ValueError(f"{path}: final image has no file subjects")
     return files
@@ -124,72 +107,40 @@ def compose(builder_document: dict[str, Any], *,
             builder_path: Path = Path("builder")) -> dict[str, Any]:
     """Return a raw SPDX predicate composed from a builder attestation."""
 
-    builder = builder_document.get("predicate")
-    if not isinstance(builder, dict):
-        raise ValueError(f"{builder_path}: expected a BuildKit attestation with an SPDX predicate")
-    if "subject" not in builder_document:
-        raise ValueError(f"{builder_path}: builder attestation has no final-image subjects")
+    builder = builder_document["predicate"]
     final = final_files(builder_document, builder_path)
-    builder_records = builder.get("files")
-    relationships = builder.get("relationships")
-    packages = builder.get("packages")
-    if not isinstance(builder_records, list):
-        raise ValueError(f"{builder_path}: SPDX predicate has no files array")
-    if not isinstance(relationships, list):
-        raise ValueError(f"{builder_path}: SPDX predicate has no relationships array")
-    if not isinstance(packages, list):
-        raise ValueError(f"{builder_path}: SPDX predicate has no packages array")
+    builder_records = builder["files"]
+    relationships = builder["relationships"]
+    packages = builder["packages"]
 
     builder_packages = {
         package["SPDXID"]: package
         for package in packages
-        if isinstance(package, dict)
-        and isinstance(package.get("SPDXID"), str)
-        and package.get("primaryPackagePurpose") != "FILE"
+        if package.get("primaryPackagePurpose") != "FILE"
     }
 
-    all_package_ids = {
-        package["SPDXID"]
-        for package in packages
-        if isinstance(package, dict) and isinstance(package.get("SPDXID"), str)
-    }
+    all_package_ids = {package["SPDXID"] for package in packages}
     package_ids = set(builder_packages)
     package_ids_by_name: defaultdict[str, set[str]] = defaultdict(set)
     for package_id, package in builder_packages.items():
-        if isinstance(package.get("name"), str):
-            package_ids_by_name[package["name"]].add(package_id)
+        package_ids_by_name[package["name"]].add(package_id)
     retained_package_ids: set[str] = set()
     owners_by_source_file: defaultdict[str, set[str]] = defaultdict(set)
     for relationship in relationships:
-        if not isinstance(relationship, dict):
+        if relationship["relationshipType"] != "CONTAINS":
             continue
-        if relationship.get("relationshipType") != "CONTAINS":
-            continue
-        package_id = relationship.get("spdxElementId")
-        source_file_id = relationship.get("relatedSpdxElement")
-        if package_id in package_ids and isinstance(source_file_id, str):
+        package_id = relationship["spdxElementId"]
+        source_file_id = relationship["relatedSpdxElement"]
+        if package_id in package_ids:
             owners_by_source_file[source_file_id].add(package_id)
-    owned_source_file_ids = set(owners_by_source_file)
 
     by_checksum: defaultdict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
-    all_file_ids: set[str] = set()
+    all_file_ids = {record["SPDXID"] for record in builder_records}
     for record in builder_records:
-        if not isinstance(record, dict):
-            continue
-        record_id = record.get("SPDXID")
-        if isinstance(record_id, str):
-            all_file_ids.add(record_id)
-        name = record.get("fileName")
-        checksums = record.get("checksums")
-        if not isinstance(name, str) or not isinstance(checksums, list):
-            continue
-        for checksum in checksums:
-            if not isinstance(checksum, dict):
-                continue
-            algorithm = checksum.get("algorithm")
-            value = checksum.get("checksumValue")
-            if isinstance(algorithm, str) and isinstance(value, str) and value:
-                by_checksum[checksum_key(algorithm, value)].append(record)
+        for checksum in record["checksums"]:
+            by_checksum[checksum_key(
+                checksum["algorithm"], checksum["checksumValue"]
+            )].append(record)
 
     composed_files: list[dict[str, Any]] = []
     source_to_final: defaultdict[str, set[str]] = defaultdict(set)
@@ -220,7 +171,7 @@ def compose(builder_document: dict[str, Any], *,
             continue
 
         owned_candidates = [
-            record for record in candidates if record["SPDXID"] in owned_source_file_ids
+            record for record in candidates if record["SPDXID"] in owners_by_source_file
         ]
         candidates = owned_candidates or candidates
         best_score = max(path_score(record["fileName"], final_name) for record in candidates)
@@ -236,7 +187,7 @@ def compose(builder_document: dict[str, Any], *,
 
         source = selected[0]
         new_id = file_id(final_record["name"], final_record["algorithm"], final_record["value"])
-        output_record = copy.deepcopy(source)
+        output_record = source.copy()
         output_record["SPDXID"] = new_id
         output_record["fileName"] = final_record["name"]
         composed_files.append(output_record)
@@ -256,11 +207,9 @@ def compose(builder_document: dict[str, Any], *,
 
     dependencies: defaultdict[str, set[str]] = defaultdict(set)
     for relationship in relationships:
-        if not isinstance(relationship, dict):
-            continue
-        relationship_type = relationship.get("relationshipType")
-        element_id = relationship.get("spdxElementId")
-        related_id = relationship.get("relatedSpdxElement")
+        relationship_type = relationship["relationshipType"]
+        element_id = relationship["spdxElementId"]
+        related_id = relationship["relatedSpdxElement"]
         if relationship_type in DEPENDENCY_RELATIONSHIP_TYPES:
             if element_id in package_ids and related_id in package_ids:
                 if relationship_type == "DEPENDS_ON":
@@ -279,18 +228,14 @@ def compose(builder_document: dict[str, Any], *,
     if extension_file_ids:
         retained_package_ids.add(EXTENSION_PACKAGE_ID)
 
-    def endpoint_replacements(endpoint: Any) -> set[Any]:
-        if endpoint not in source_to_final:
-            return {endpoint}
-        return source_to_final[endpoint]
+    def endpoint_replacements(endpoint: str) -> set[str]:
+        return source_to_final.get(endpoint, {endpoint})
 
     composed_relationships: list[dict[str, Any]] = []
     seen_relationships: set[str] = set()
     for relationship in relationships:
-        if not isinstance(relationship, dict):
-            continue
-        element_id = relationship.get("spdxElementId")
-        related_id = relationship.get("relatedSpdxElement")
+        element_id = relationship["spdxElementId"]
+        related_id = relationship["relatedSpdxElement"]
         if (
             (element_id in all_file_ids and element_id not in source_to_final)
             or (related_id in all_file_ids and related_id not in source_to_final)
@@ -302,14 +247,14 @@ def compose(builder_document: dict[str, Any], *,
         ):
             continue
         if element_id not in source_to_final and related_id not in source_to_final:
-            composed_relationships.append(copy.deepcopy(relationship))
+            composed_relationships.append(relationship.copy())
             continue
 
         element_ids = endpoint_replacements(element_id)
         related_ids = endpoint_replacements(related_id)
         for new_element_id in element_ids:
             for new_related_id in related_ids:
-                replacement = copy.deepcopy(relationship)
+                replacement = relationship.copy()
                 replacement["spdxElementId"] = new_element_id
                 replacement["relatedSpdxElement"] = new_related_id
                 identity = json.dumps(replacement, sort_keys=True, separators=(",", ":"))
@@ -327,10 +272,10 @@ def compose(builder_document: dict[str, Any], *,
         for package_id in sorted(package_ids_for_file)
     )
 
-    output = copy.deepcopy(builder)
+    output = builder.copy()
     output["packages"] = [
         package for package in packages
-        if isinstance(package, dict) and package.get("SPDXID") in retained_package_ids
+        if package["SPDXID"] in retained_package_ids
     ]
     if extension_file_ids:
         output["packages"].append(extension_package())
@@ -369,24 +314,20 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 
-    try:
-        output = compose(
-            read_json(args.builder_sbom),
-            builder_path=args.builder_sbom,
-        )
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        with args.output.open("w", encoding="utf-8") as stream:
-            json.dump(output, stream, indent=2)
-            stream.write("\n")
-        print(
-            f"composed {len(output['packages'])} packages, "
-            f"{len(output['files'])} final files, "
-            f"{len(output['relationships'])} relationships",
-            file=sys.stderr,
-        )
-    except (OSError, ValueError, json.JSONDecodeError) as error:
-        print(f"compose_sbom.py: {error}", file=sys.stderr)
-        return 1
+    output = compose(
+        read_json(args.builder_sbom),
+        builder_path=args.builder_sbom,
+    )
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    with args.output.open("w", encoding="utf-8") as stream:
+        json.dump(output, stream, indent=2)
+        stream.write("\n")
+    print(
+        f"composed {len(output['packages'])} packages, "
+        f"{len(output['files'])} final files, "
+        f"{len(output['relationships'])} relationships",
+        file=sys.stderr,
+    )
     return 0
 
 

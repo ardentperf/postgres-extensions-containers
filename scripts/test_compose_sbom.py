@@ -228,6 +228,21 @@ class ComposeSbomTest(unittest.TestCase):
                 {"name": "pkg:docker/example@latest", "digest": {"sha256": "image"}},
             ]))
 
+    def test_malformed_spdx_entries_fail_instead_of_being_skipped(self):
+        malformed_entries = {
+            "packages": {"name": "broken"},
+            "files": {"fileName": "broken", "checksums": []},
+            "relationships": {},
+        }
+        for field, entry in malformed_entries.items():
+            with self.subTest(field=field):
+                document = builder_document([
+                    {"name": "lib/ext.so", "digest": {"sha256": "extension"}},
+                ])
+                document["predicate"][field].append(entry)
+                with self.assertRaises(KeyError):
+                    compose(document)
+
 
 if __name__ == "__main__":
     unittest.main()
