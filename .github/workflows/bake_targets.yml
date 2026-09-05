@@ -174,9 +174,8 @@ jobs:
               "runAttempt": "${GITHUB_RUN_ATTEMPT}",
               "actor": "${GITHUB_ACTOR}"
             }
-          }
+              }
           EOF
-              test -s "${provenance_manifest}"
               jq -e . "${provenance_manifest}" > /dev/null
               jq -e --arg namespace "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1" \
                 --arg builder_sbom_sha256 "${builder_sbom_sha256}" \
