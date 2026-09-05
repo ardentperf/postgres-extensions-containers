@@ -212,20 +212,28 @@ skopeo inspect docker://<image> | jq '.Labels'
 
 ### SBOM scope
 
-The published SBOM is composed from the post-install `builder` stage. Its
-package list starts with packages that own files actually shipped in the
-extension image, then follows package dependency relationships from those
-packages to include referenced base packages. Its file list comes from the
-builder attestation's final-image subjects, so it contains only files actually
-shipped in the image, including copied system libraries and licenses. Files with
-no package owner in the builder SBOM are attributed to an `extension-payload`
-package because they are build artifacts.
+The published SBOM is composed from the SPDX predicate produced for the
+post-install `builder` stage and the final-image file subjects in that
+attestation. The subjects are matched to builder files by SHA-256 checksum.
+When a checksum is shared, package-owned files and the closest path suffix are
+preferred. A file under `licenses/<package>/` is assigned to that package when
+the package name is unambiguous. Unmatched or ambiguous files are represented
+by an `extension-payload` package instead of being assigned to an unverified
+package.
 
-The final scratch stage is not scanned or read as an SBOM, and build-only
-packages are not included. During CI, the builder SBOM and its final-image file
-subjects are composed into one SPDX predicate and attached to each platform
-image. This keeps the SBOM focused on the extension payload while still making
-system-library and package dependency vulnerabilities visible.
+The package list contains packages that own the matched final files, followed
+by their transitive dependencies from SPDX `DEPENDENCY_OF` or `DEPENDS_ON`
+relationships. This includes relevant PostgreSQL and operating-system
+packages from the base image. Unreferenced build-only packages are excluded.
+The file list is limited to files actually shipped in the image, including
+copied system libraries and license files. Relationships are trimmed and
+rewritten to match the resulting package and file lists.
+
+The final scratch stage is not scanned or read as an SBOM. During CI, the
+builder SBOM and its final-image file subjects are composed into one SPDX
+predicate and attached to each platform image. This keeps the SBOM focused on
+the extension payload while still making system-library, PostgreSQL, and
+package-dependency vulnerabilities visible.
 
 ## Image catalogs
 

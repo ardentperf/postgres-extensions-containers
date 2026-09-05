@@ -1,12 +1,7 @@
 #!/usr/bin/env python3
-"""Compose an SPDX predicate with final-image packages and files.
+"""Compose the final-payload SPDX predicate.
 
-BuildKit's SBOM attestation for a multi-stage build contains two useful but
-different views of the result: the selected builder stage is represented by
-the SPDX predicate, while the attestation subject identifies the files in the
-final image. This module keeps packages that own final-image files, adds their
-referenced dependencies, and uses the final subjects to trim the file
-inventory and its relationships.
+See README.md#sbom-scope for the composition rules.
 """
 
 from __future__ import annotations
