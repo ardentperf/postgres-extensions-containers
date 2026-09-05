@@ -79,11 +79,11 @@ class ComposeSbomTest(unittest.TestCase):
         output = compose(builder_document([
             {"name": "lib/ext.so", "digest": {"sha256": "extension"}},
             {"name": "generated/artifact", "digest": {"sha256": "generated"}},
-        ]))
+        ]), extension_name="plr")
 
         self.assertEqual(
             [package["name"] for package in output["packages"]],
-            ["extension", "extension-payload"],
+            ["extension", "plr-extension-payload"],
         )
         self.assertEqual(
             [file["fileName"] for file in output["files"]],
@@ -140,7 +140,7 @@ class ComposeSbomTest(unittest.TestCase):
             },
         ])
 
-        output = compose(document)
+        output = compose(document, extension_name="plr")
         package_names = {item["name"] for item in output["packages"]}
         self.assertIn("libblas3", package_names)
         self.assertIn("shared-license", package_names)
@@ -188,8 +188,8 @@ class ComposeSbomTest(unittest.TestCase):
             },
         ])
 
-        output = compose(document)
-        self.assertEqual([item["name"] for item in output["packages"]], ["extension-payload"])
+        output = compose(document, extension_name="plr")
+        self.assertEqual([item["name"] for item in output["packages"]], ["plr-extension-payload"])
 
     def test_license_path_selects_named_package(self):
         document = builder_document([
@@ -211,7 +211,7 @@ class ComposeSbomTest(unittest.TestCase):
             "relatedSpdxElement": "SPDXRef-File-gcc-copyright",
         })
 
-        output = compose(document)
+        output = compose(document, extension_name="plr")
         package_names = {item["name"] for item in output["packages"]}
         self.assertIn("libgomp1", package_names)
         self.assertNotIn("gcc-14-base", package_names)
@@ -227,7 +227,7 @@ class ComposeSbomTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "image subject"):
             compose(builder_document([
                 {"name": "pkg:docker/example@latest", "digest": {"sha256": "image"}},
-            ]))
+            ]), extension_name="plr")
 
     def test_malformed_spdx_entries_fail_instead_of_being_skipped(self):
         malformed_entries = {
@@ -242,7 +242,7 @@ class ComposeSbomTest(unittest.TestCase):
                 ])
                 document["predicate"][field].append(entry)
                 with self.assertRaises(KeyError):
-                    compose(document)
+                    compose(document, extension_name="plr")
 
 
 if __name__ == "__main__":

@@ -129,6 +129,7 @@ jobs:
 
               ./scripts/compose_sbom.py \
                 --builder-sbom "${builder_sbom}" \
+                --extension-name "${EXTENSION_NAME}" \
                 --output "${working_directory}/predicates/${bake_target}-${platform_name}/extension-sbom.spdx.json"
               composed_sbom="${working_directory}/predicates/${bake_target}-${platform_name}/extension-sbom.spdx.json"
 

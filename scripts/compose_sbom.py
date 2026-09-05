@@ -65,7 +65,7 @@ def file_id(name: str, algorithm: str, value: str) -> str:
     return f"SPDXRef-File-final-{hashlib.sha256(identity).hexdigest()[:24]}"
 
 
-def extension_package() -> dict[str, Any]:
+def extension_package(extension_name: str) -> dict[str, Any]:
     return {
         "SPDXID": EXTENSION_PACKAGE_ID,
         "copyrightText": "NOASSERTION",
@@ -73,7 +73,7 @@ def extension_package() -> dict[str, Any]:
         "filesAnalyzed": True,
         "licenseConcluded": "NOASSERTION",
         "licenseDeclared": "NOASSERTION",
-        "name": "extension-payload",
+        "name": f"{extension_name}-extension-payload",
         "supplier": "NOASSERTION",
         "versionInfo": "NOASSERTION",
     }
@@ -94,6 +94,7 @@ def extension_file(final_record: dict[str, str]) -> dict[str, Any]:
 
 
 def compose(builder_document: dict[str, Any], *,
+            extension_name: str,
             builder_path: Path = Path("builder")) -> dict[str, Any]:
     """Return a raw SPDX predicate composed from a builder attestation."""
 
@@ -248,7 +249,7 @@ def compose(builder_document: dict[str, Any], *,
         if package["SPDXID"] in retained_package_ids
     ]
     if extension_file_ids:
-        output["packages"].append(extension_package())
+        output["packages"].append(extension_package(extension_name))
     output["files"] = composed_files
     output["relationships"] = composed_relationships
     described_ids = {
@@ -281,11 +282,13 @@ def main() -> int:
         description="Compose final-image package owners and files from builder SPDX data"
     )
     parser.add_argument("--builder-sbom", type=Path, required=True)
+    parser.add_argument("--extension-name", required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 
     output = compose(
         read_json(args.builder_sbom),
+        extension_name=args.extension_name,
         builder_path=args.builder_sbom,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
