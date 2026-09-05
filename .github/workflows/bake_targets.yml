@@ -79,7 +79,6 @@ jobs:
         run: |
           set -Eeuo pipefail
           python3 scripts/test_compose_sbom.py
-
           # Export builder-stage SBOMs per target and platform; the pushed image
           # supplies cached layers, and the final scratch stage is not scanned.
           export environment=testing
@@ -87,7 +86,6 @@ jobs:
           working_directory="${RUNNER_TEMP}/extension-sbom"
           mkdir -p "${working_directory}/predicates"
           : > "${working_directory}/manifest.tsv"
-
           bake_files=(-f docker-bake.hcl -f "${EXTENSION_NAME}/metadata.hcl")
           bake_definition="${working_directory}/bake.json"
           docker buildx bake "${bake_files[@]}" --print > "${bake_definition}"
@@ -121,6 +119,7 @@ jobs:
 
               builder_sbom="${output_directory}/sbom-builder.spdx.json"
               test -s "${builder_sbom}"
+              jq -e '.predicateType == "https://spdx.dev/Document" and .predicate.name == "builder" and (.subject | length > 0)' "${builder_sbom}"
 
               ./scripts/compose_sbom.py \
                 --builder-sbom "${builder_sbom}" \
