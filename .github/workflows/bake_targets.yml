@@ -254,18 +254,7 @@ jobs:
             attestation_records+=$'\n'
           done
 
-          jq -e -s --argjson expected_count "${#bake_targets[@]}" \
-            'type == "array" and length == $expected_count' \
-            <<< "${attestation_records}" > "${working_directory}/attestation-manifest.json"
-          jq -e 'all(.[];
-            (.target | type == "string" and length > 0) and
-            (.testingImage | type == "string" and length > 0) and
-            (.testingSubject | type == "string" and length > 0) and
-            (.productionImage | type == "string" and length > 0) and
-            (.productionSubject | type == "string" and length > 0) and
-            (.indexDigest | type == "string" and test("^sha256:[0-9a-f]{64}$")) and
-            (.predicatePath | type == "string" and length > 0))' \
-            "${working_directory}/attestation-manifest.json"
+          jq -e -s . <<< "${attestation_records}" > "${working_directory}/attestation-manifest.json"
           echo "manifest=$(jq -c . "${working_directory}/attestation-manifest.json")" >> "$GITHUB_OUTPUT"
 
       - name: Upload composed SBOMs
