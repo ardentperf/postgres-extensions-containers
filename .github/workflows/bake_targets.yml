@@ -130,15 +130,13 @@ jobs:
               test -s "${builder_sbom}"
               jq -e '.predicateType == "https://spdx.dev/Document" and .predicate.name == "sbom-builder" and (.subject | length > 0)' "${builder_sbom}"
 
-              architecture=${platform#*/}
               image_manifest_digest=$(docker buildx imagetools inspect "${image}" --raw | \
-                jq -r --arg architecture "${architecture}" '
+                jq -r --arg architecture "${platform#*/}" '
                   [.manifests[] |
                    select(.platform.os == "linux" and .platform.architecture == $architecture) |
                    .digest] | first // empty')
               test -n "${image_manifest_digest}" && test "${image_manifest_digest}" != "null"
 
-              builder_sbom_sha256=$(sha256sum "${builder_sbom}" | awk '{print $1}')
               predicate_directory="${working_directory}/platform-predicates/${bake_target}-${platform_name}"
               predicate="${predicate_directory}/extension-sbom.spdx.json"
               mkdir -p "${predicate_directory}"
@@ -150,7 +148,7 @@ jobs:
 
               test -s "${predicate}"
               builder_sbom_paths+=("${builder_sbom}")
-              builder_sbom_records+=("$(jq -cn --arg platform "${platform}" --arg sha256 "${builder_sbom_sha256}" '{platform: $platform, sha256: $sha256}')")
+              builder_sbom_records+=("$(jq -cn --arg platform "${platform}" --arg sha256 "$(sha256sum "${builder_sbom}" | awk '{print $1}')" '{platform: $platform, sha256: $sha256}')")
               composed_predicate_paths+=("${predicate}")
               platform_manifest_records+=("$(jq -cn --arg platform "${platform}" --arg digest "${image_manifest_digest}" '{platform: $platform, manifestDigest: $digest}')")
               platforms+=("${platform}")
@@ -163,8 +161,6 @@ jobs:
               sha256sum | awk '{print "sha256:" $1}')
             test -n "${image_index_digest}"
 
-            builder_sbom_records_json=$(printf '%s\n' "${builder_sbom_records[@]}" | jq -s -c .)
-            platform_manifest_records_json=$(printf '%s\n' "${platform_manifest_records[@]}" | jq -s -c .)
             provenance_manifest="${working_directory}/manifests/${bake_target}.json"
             predicate_directory="${working_directory}/predicates/${bake_target}"
             predicate="${predicate_directory}/extension-sbom.spdx.json"
@@ -178,13 +174,13 @@ jobs:
             "schemaVersion": "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1",
             "annotationDate": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "inputs": {
-              "builderSboms": ${builder_sbom_records_json},
+              "builderSboms": $(printf '%s\n' "${builder_sbom_records[@]}" | jq -s -c .),
               "buildDefinition": {"sha256": "$(sha256sum "${bake_definition}" | awk '{print $1}')"}
             },
             "image": {
               "sourceCommit": "${GITHUB_SHA}",
               "target": "${bake_target}",
-              "platforms": ${platform_manifest_records_json},
+              "platforms": $(printf '%s\n' "${platform_manifest_records[@]}" | jq -s -c .),
               "indexDigest": "${image_index_digest}"
             },
             "composer": {
@@ -245,15 +241,13 @@ jobs:
                 (.comment | startswith($namespace + " ")))' \
               "${predicate}"
 
-            testing_subject="${image%:*}"
             production_image="${image/-testing:/:}"
-            production_subject="${production_image%:*}"
             attestation_records+=("$(jq -cn \
               --arg target "${bake_target}" \
               --arg testing_image "${image}" \
-              --arg testing_subject "${testing_subject}" \
               --arg production_image "${production_image}" \
-              --arg production_subject "${production_subject}" \
+              --arg testing_subject "${image%:*}" \
+              --arg production_subject "${production_image%:*}" \
               --arg index_digest "${image_index_digest}" \
               --arg predicate_path "predicates/${bake_target}/extension-sbom.spdx.json" \
               '{target: $target, testingImage: $testing_image, testingSubject: $testing_subject,
@@ -354,8 +348,8 @@ jobs:
           # renovate: datasource=github-tags depName=cloudnative-pg/cloudnative-pg versioning=semver-coerced extractVersion=^v(?<version>\d+\.\d+)\.\d+$
           LATEST_RELEASE: "1.30"
         run: |
-          PREVIOUS_RELEASE=$(awk -F. '{print $1"."$2-1}' <<< "$LATEST_RELEASE")
-          versions=$(jq -cn --arg latest "$LATEST_RELEASE" --arg previous "$PREVIOUS_RELEASE" \
+          versions=$(jq -cn --arg latest "$LATEST_RELEASE" \
+            --arg previous "$(awk -F. '{print $1"."$2-1}' <<< "$LATEST_RELEASE")" \
             '["main", $previous, $latest]')
           echo "versions=$versions" >> "$GITHUB_OUTPUT"
 
@@ -450,14 +444,12 @@ jobs:
 
           jq -e 'type == "array" and length > 0' extension-sboms/attestation-manifest.json > /dev/null
           while IFS= read -r record; do
-            testing_image=$(jq -r '.testingImage' <<< "${record}")
             production_image=$(jq -r '.productionImage' <<< "${record}")
             index_digest=$(jq -r '.indexDigest' <<< "${record}")
-            predicate_path=$(jq -r '.predicatePath' <<< "${record}")
-            test -n "${testing_image}" && test "${testing_image}" != "null"
+            jq -e '.testingImage | type == "string" and length > 0' <<< "${record}" > /dev/null
             test -n "${production_image}" && test "${production_image}" != "null"
             test -n "${index_digest}" && test "${index_digest}" != "null"
-            predicate="extension-sboms/${predicate_path}"
+            predicate="extension-sboms/$(jq -r '.predicatePath' <<< "${record}")"
             test -s "${predicate}"
             jq -e --arg namespace "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1" '
               .spdxVersion == "SPDX-2.3" and
@@ -468,9 +460,8 @@ jobs:
               (.comment | startswith($namespace + " ")))' \
               "${predicate}"
 
-            copied_index_digest=$(docker buildx imagetools inspect "${production_image}" --raw | \
-              sha256sum | awk '{print "sha256:" $1}')
-            test "${copied_index_digest}" = "${index_digest}"
+            test "$(docker buildx imagetools inspect "${production_image}" --raw | \
+              sha256sum | awk '{print "sha256:" $1}')" = "${index_digest}"
           done < <(jq -c '.[]' extension-sboms/attestation-manifest.json)
 
   attest-production-sboms:
