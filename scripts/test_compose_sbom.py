@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from compose_sbom import compose  # noqa: E402
+from compose_sbom import aggregate, compose  # noqa: E402
 
 
 def checksum(value):
@@ -97,6 +97,53 @@ def provenance_manifest():
             "toolVersions": {
                 "python": "Python 3.13.0",
                 "jq": "jq-1.7",
+            },
+        },
+        "workflow": {
+            "repository": "cnpg-extensions/postgres-extensions-containers",
+            "name": "Build, test and publish a target extension",
+            "ref": "refs/heads/main",
+            "runId": "12345",
+            "runAttempt": "1",
+            "actor": "octocat",
+        },
+    }
+
+
+def aggregate_provenance_manifest():
+    return {
+        "schemaVersion": "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1",
+        "annotationDate": "2026-09-05T12:00:00Z",
+        "inputs": {
+            "builderSboms": [
+                {"platform": "linux/amd64", "sha256": "a" * 64},
+                {"platform": "linux/arm64", "sha256": "b" * 64},
+            ],
+            "buildDefinition": {"sha256": "c" * 64},
+        },
+        "image": {
+            "sourceCommit": "d" * 40,
+            "target": "plr-1.0.0-18-bookworm",
+            "platforms": [
+                {
+                    "platform": "linux/amd64",
+                    "manifestDigest": "sha256:" + "e" * 64,
+                },
+                {
+                    "platform": "linux/arm64",
+                    "manifestDigest": "sha256:" + "f" * 64,
+                },
+            ],
+            "indexDigest": "sha256:" + "1" * 64,
+        },
+        "composer": {
+            "revision": "2" * 40,
+            "command": "./scripts/compose_sbom.py --aggregate-from amd64.json --aggregate-from arm64.json",
+            "interpreter": "Python 3.13.0",
+            "toolVersions": {
+                "python": "Python 3.13.0",
+                "jq": "jq-1.7",
+                "actionsAttest": "actions/attest@v4",
             },
         },
         "workflow": {
@@ -216,6 +263,114 @@ class ComposeSbomTest(unittest.TestCase):
                 extension_name="plr",
                 provenance_manifest=manifest,
             )
+
+        manifest = aggregate_provenance_manifest()
+        del manifest["inputs"]["builderSboms"]
+        with self.assertRaisesRegex(ValueError, "inputs.builderSboms"):
+            aggregate(
+                [("linux/amd64", compose(builder_document([
+                    {"name": "lib/ext.so", "digest": {"sha256": "extension"}},
+                ]), extension_name="plr"))],
+                extension_name="plr",
+                provenance_manifest=manifest,
+            )
+
+    def test_aggregate_merges_platform_documents_and_adds_one_annotation(self):
+        amd64 = builder_document([
+            {"name": "lib/ext.so", "digest": {"sha256": "extension"}},
+        ])
+        arm64 = builder_document([
+            {"name": "lib/ext.so", "digest": {"sha256": "extension-arm64"}},
+        ])
+        arm64["predicate"]["packages"].append(
+            package("SPDXRef-Package-arm-only", "arm-only", "1", "pkg:generic/arm-only@1")
+        )
+        arm64["predicate"]["files"].append({
+            "SPDXID": "SPDXRef-File-arm-only",
+            "fileName": "usr/lib/arm-only.so",
+            "checksums": checksum("extension-arm64"),
+        })
+        arm64["predicate"]["relationships"].append({
+            "spdxElementId": "SPDXRef-Package-arm-only",
+            "relationshipType": "CONTAINS",
+            "relatedSpdxElement": "SPDXRef-File-arm-only",
+        })
+        manifest = aggregate_provenance_manifest()
+
+        output = aggregate(
+            [
+                ("linux/amd64", compose(amd64, extension_name="plr")),
+                ("linux/arm64", compose(arm64, extension_name="plr")),
+            ],
+            extension_name="plr",
+            provenance_manifest=manifest,
+        )
+
+        self.assertEqual(output["name"], "plr-multi-platform-sbom")
+        self.assertEqual(
+            output["documentNamespace"],
+            "https://github.com/cnpg-extensions/postgres-extensions-containers/"
+            "sbom-composition/v1/documents/plr/sha256-" + "1" * 64,
+        )
+        self.assertIn("extension", {item["name"] for item in output["packages"]})
+        self.assertIn("arm-only", {item["name"] for item in output["packages"]})
+        self.assertEqual(len(output["annotations"]), 1)
+        annotation = output["annotations"][0]
+        self.assertEqual(annotation["spdxElementId"], "SPDXRef-DOCUMENT")
+        self.assertEqual(annotation["annotationType"], "OTHER")
+        self.assertIn('"builderSboms"', annotation["comment"])
+        self.assertIn('"indexDigest":"sha256:' + "1" * 64 + '"', annotation["comment"])
+
+    def test_aggregate_builder_hashes_are_checked_for_each_platform(self):
+        documents = [
+            builder_document([
+                {"name": "lib/ext.so", "digest": {"sha256": "extension"}},
+            ]),
+            builder_document([
+                {"name": "lib/ext.so", "digest": {"sha256": "extension-arm64"}},
+            ]),
+        ]
+        manifest = aggregate_provenance_manifest()
+        with TemporaryDirectory() as directory:
+            paths = []
+            for index, document in enumerate(documents):
+                path = Path(directory) / f"builder-{index}.json"
+                path.write_text(json.dumps(document), encoding="utf-8")
+                paths.append(path)
+            manifest["inputs"]["builderSboms"][0]["sha256"] = hashlib.sha256(
+                paths[0].read_bytes()
+            ).hexdigest()
+            manifest["inputs"]["builderSboms"][1]["sha256"] = hashlib.sha256(
+                paths[1].read_bytes()
+            ).hexdigest()
+            with self.assertRaisesRegex(ValueError, "builder SBOM hash"):
+                aggregate(
+                    [
+                        ("linux/amd64", compose(documents[0], extension_name="plr")),
+                        ("linux/arm64", compose(documents[1], extension_name="plr")),
+                    ],
+                    extension_name="plr",
+                    provenance_manifest=manifest,
+                    builder_paths=[("linux/amd64", paths[1]), ("linux/arm64", paths[0])],
+                )
+
+    def test_aggregate_annotation_is_deterministic(self):
+        manifest = aggregate_provenance_manifest()
+        documents = [
+            ("linux/amd64", compose(builder_document([
+                {"name": "lib/ext.so", "digest": {"sha256": "extension"}},
+            ]), extension_name="plr")),
+            ("linux/arm64", compose(builder_document([
+                {"name": "lib/ext.so", "digest": {"sha256": "extension-arm64"}},
+            ]), extension_name="plr")),
+        ]
+        first = aggregate(documents, extension_name="plr", provenance_manifest=manifest)
+        second = aggregate(copy.deepcopy(documents), extension_name="plr", provenance_manifest=manifest)
+        self.assertEqual(first, second)
+        self.assertEqual(
+            json.dumps(first, sort_keys=True, separators=(",", ":")),
+            json.dumps(second, sort_keys=True, separators=(",", ":")),
+        )
 
     def test_final_packages_are_retained_and_unshipped_packages_are_removed(self):
         output = compose(builder_document([

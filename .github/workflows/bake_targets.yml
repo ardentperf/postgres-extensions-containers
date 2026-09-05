@@ -25,6 +25,7 @@ jobs:
     outputs:
       metadata: ${{ steps.build.outputs.metadata }}
       images: ${{ steps.images.outputs.images }}
+      sbom_manifest: ${{ steps.sbom.outputs.manifest }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -72,7 +73,8 @@ jobs:
         # and https://github.com/actions/starter-workflows/blob/main/ci/docker-publish.yml for more details on
         # how to use cosign.
 
-      - name: Compose and attach SBOMs
+      - name: Compose aggregate SBOMs
+        id: sbom
         env:
           EXTENSION_NAME: ${{ inputs.extension_name }}
           IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
@@ -80,12 +82,16 @@ jobs:
           set -Eeuo pipefail
           # Export builder-stage SBOMs per target and platform; the pushed image
           # supplies cached layers, and the final scratch stage is not scanned.
+          # Compose both platform documents into one SPDX payload per image
+          # target. The aggregate is attached to the multi-platform index by
+          # the actions/attest job below.
           export environment=testing
           export registry="${IMAGE_REGISTRY}"
           export revision="${GITHUB_SHA}"
           working_directory="${RUNNER_TEMP}/extension-sbom"
-          mkdir -p "${working_directory}/manifests" "${working_directory}/predicates"
-          : > "${working_directory}/manifest.tsv"
+          mkdir -p "${working_directory}/manifests" \
+            "${working_directory}/platform-predicates" \
+            "${working_directory}/predicates"
           bake_files=(-f docker-bake.hcl -f "${EXTENSION_NAME}/metadata.hcl")
           bake_definition="${working_directory}/bake.json"
           docker buildx bake "${bake_files[@]}" --print > "${bake_definition}"
@@ -97,17 +103,24 @@ jobs:
           buildx_version=$(docker buildx version)
           jq_version=$(jq --version)
           cosign_version=$(cosign version 2>&1 | sed -n '1p')
+          actions_attest_version="actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6"
 
           # Inject the SBOM stage selector into a temporary Dockerfile.
           sed '1iARG BUILDKIT_SBOM_SCAN_STAGE=builder' "${EXTENSION_NAME}/Dockerfile" > "${EXTENSION_NAME}/.sbom.Dockerfile"
 
           mapfile -t bake_targets < <(jq -r '.target | keys[]' "${bake_definition}")
           test "${#bake_targets[@]}" -gt 0
+          attestation_records=()
 
           for bake_target in "${bake_targets[@]}"; do
             image=$(jq -r --arg target "${bake_target}" '.target[$target].tags[0]' "${bake_definition}")
             test -n "${image}" && test "${image}" != "null"
 
+            builder_sbom_paths=()
+            builder_sbom_records=()
+            composed_predicate_paths=()
+            platform_manifest_records=()
+            platforms=()
             for platform in linux/amd64 linux/arm64; do
               platform_name=${platform//\//-}
               output_directory="${working_directory}/${bake_target}-${platform_name}"
@@ -135,24 +148,53 @@ jobs:
               test -n "${image_manifest_digest}" && test "${image_manifest_digest}" != "null"
 
               builder_sbom_sha256=$(sha256sum "${builder_sbom}" | awk '{print $1}')
-              predicate_directory="${working_directory}/predicates/${bake_target}-${platform_name}"
+              predicate_directory="${working_directory}/platform-predicates/${bake_target}-${platform_name}"
               predicate="${predicate_directory}/extension-sbom.spdx.json"
-              provenance_manifest="${working_directory}/manifests/${bake_target}-${platform_name}.json"
               mkdir -p "${predicate_directory}"
-              composer_command="./scripts/compose_sbom.py --builder-sbom ${builder_sbom} --extension-name ${EXTENSION_NAME} --provenance-manifest ${provenance_manifest} --output ${predicate}"
-              cat > "${provenance_manifest}" <<EOF
+
+              ./scripts/compose_sbom.py \
+                --builder-sbom "${builder_sbom}" \
+                --extension-name "${EXTENSION_NAME}" \
+                --output "${predicate}"
+
+              test -s "${predicate}"
+              builder_sbom_paths+=("${builder_sbom}")
+              builder_sbom_records+=("$(jq -cn --arg platform "${platform}" --arg sha256 "${builder_sbom_sha256}" '{platform: $platform, sha256: $sha256}')")
+              composed_predicate_paths+=("${predicate}")
+              platform_manifest_records+=("$(jq -cn --arg platform "${platform}" --arg digest "${image_manifest_digest}" '{platform: $platform, manifestDigest: $digest}')")
+              platforms+=("${platform}")
+            done
+
+            # The raw index bytes are the subject digest for the aggregate
+            # attestation. This intentionally excludes the final SPDX hash;
+            # the signed attestation and OCI descriptor bind that content.
+            image_index_digest=$(docker buildx imagetools inspect "${image}" --raw | \
+              sha256sum | awk '{print "sha256:" $1}')
+            test -n "${image_index_digest}"
+
+            builder_sbom_records_json=$(printf '%s\n' "${builder_sbom_records[@]}" | jq -s -c .)
+            platform_manifest_records_json=$(printf '%s\n' "${platform_manifest_records[@]}" | jq -s -c .)
+            provenance_manifest="${working_directory}/manifests/${bake_target}.json"
+            predicate_directory="${working_directory}/predicates/${bake_target}"
+            predicate="${predicate_directory}/extension-sbom.spdx.json"
+            mkdir -p "${predicate_directory}"
+            composer_command="./scripts/compose_sbom.py --extension-name ${EXTENSION_NAME} --provenance-manifest ${provenance_manifest} --output ${predicate}"
+            for platform in "${platforms[@]}"; do
+              composer_command+=" --builder-sbom <${platform}> --aggregate-from <${platform}> --platform ${platform}"
+            done
+            cat > "${provenance_manifest}" <<EOF
           {
             "schemaVersion": "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1",
             "annotationDate": "${annotation_date}",
             "inputs": {
-              "builderSbom": {"sha256": "${builder_sbom_sha256}"},
+              "builderSboms": ${builder_sbom_records_json},
               "buildDefinition": {"sha256": "${build_definition_sha256}"}
             },
             "image": {
               "sourceCommit": "${GITHUB_SHA}",
               "target": "${bake_target}",
-              "platform": "${platform}",
-              "manifestDigest": "${image_manifest_digest}"
+              "platforms": ${platform_manifest_records_json},
+              "indexDigest": "${image_index_digest}"
             },
             "composer": {
               "revision": "${composer_revision}",
@@ -163,7 +205,8 @@ jobs:
                 "docker": "${docker_version}",
                 "buildx": "${buildx_version}",
                 "jq": "${jq_version}",
-                "cosign": "${cosign_version}"
+                "cosign": "${cosign_version}",
+                "actionsAttest": "${actions_attest_version}"
               }
             },
             "workflow": {
@@ -174,43 +217,61 @@ jobs:
               "runAttempt": "${GITHUB_RUN_ATTEMPT}",
               "actor": "${GITHUB_ACTOR}"
             }
-              }
+          }
           EOF
-              jq -e . "${provenance_manifest}" > /dev/null
-              jq -e --arg namespace "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1" \
-                --arg builder_sbom_sha256 "${builder_sbom_sha256}" \
-                --arg build_definition_sha256 "${build_definition_sha256}" \
-                '.schemaVersion == $namespace and
-                 .inputs.builderSbom.sha256 == $builder_sbom_sha256 and
-                 .inputs.buildDefinition.sha256 == $build_definition_sha256' \
-                "${provenance_manifest}"
+            # The readable heredoc is deliberately checked before the
+            # composer consumes it. jq -e also rejects malformed JSON.
+            jq -e . "${provenance_manifest}" > /dev/null
+            jq -e --arg namespace "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1" \
+              --arg index_digest "${image_index_digest}" \
+              '.schemaVersion == $namespace and
+               (.inputs.builderSboms | length == 2) and
+               (.image.platforms | length == 2) and
+               .image.indexDigest == $index_digest' \
+              "${provenance_manifest}"
 
-              ./scripts/compose_sbom.py \
-                --builder-sbom "${builder_sbom}" \
-                --extension-name "${EXTENSION_NAME}" \
-                --provenance-manifest "${provenance_manifest}" \
-                --output "${predicate}"
-
-              test -s "${predicate}"
-              jq -e --arg namespace "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1" '
-                .spdxVersion == "SPDX-2.3" and
-                .SPDXID == "SPDXRef-DOCUMENT" and
-                any((.annotations // [])[];
-                  .spdxElementId == "SPDXRef-DOCUMENT" and
-                  .annotationType == "OTHER" and
-                  (.comment | startswith($namespace + " ")))' \
-                "${predicate}"
-
-              cosign attest --yes \
-                --type https://spdx.dev/Document \
-                --predicate "${predicate}" \
-                "${image}@${image_manifest_digest}"
-
-              printf '%s\t%s\tpredicates/%s-%s/extension-sbom.spdx.json\n' \
-                "${image}" "${architecture}" "${bake_target}" "${platform_name}" \
-                >> "${working_directory}/manifest.tsv"
+            compose_args=(
+              --extension-name "${EXTENSION_NAME}"
+              --provenance-manifest "${provenance_manifest}"
+              --output "${predicate}"
+            )
+            for index in "${!platforms[@]}"; do
+              compose_args+=(
+                --builder-sbom "${builder_sbom_paths[$index]}"
+                --aggregate-from "${composed_predicate_paths[$index]}"
+                --platform "${platforms[$index]}"
+              )
             done
+            ./scripts/compose_sbom.py "${compose_args[@]}"
+
+            test -s "${predicate}"
+            jq -e --arg namespace "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1" '
+              .spdxVersion == "SPDX-2.3" and
+              .SPDXID == "SPDXRef-DOCUMENT" and
+              any((.annotations // [])[];
+                .spdxElementId == "SPDXRef-DOCUMENT" and
+                .annotationType == "OTHER" and
+                (.comment | startswith($namespace + " ")))' \
+              "${predicate}"
+
+            testing_subject="${image%:*}"
+            production_image="${image/-testing:/:}"
+            production_subject="${production_image%:*}"
+            attestation_records+=("$(jq -cn \
+              --arg target "${bake_target}" \
+              --arg testing_image "${image}" \
+              --arg testing_subject "${testing_subject}" \
+              --arg production_image "${production_image}" \
+              --arg production_subject "${production_subject}" \
+              --arg index_digest "${image_index_digest}" \
+              --arg predicate_path "predicates/${bake_target}/extension-sbom.spdx.json" \
+              '{target: $target, testingImage: $testing_image, testingSubject: $testing_subject,
+                productionImage: $production_image, productionSubject: $production_subject,
+                indexDigest: $index_digest, predicatePath: $predicate_path}')")
           done
+
+          printf '%s\n' "${attestation_records[@]}" | jq -s . > "${working_directory}/attestation-manifest.json"
+          echo "manifest=$(jq -c . "${working_directory}/attestation-manifest.json")" >> "$GITHUB_OUTPUT"
 
       - name: Upload composed SBOMs
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -218,7 +279,7 @@ jobs:
           name: extension-sboms-${{ inputs.extension_name }}-${{ github.run_id }}
           if-no-files-found: error
           path: |
-            ${{ runner.temp }}/extension-sbom/manifest.tsv
+            ${{ runner.temp }}/extension-sbom/attestation-manifest.json
             ${{ runner.temp }}/extension-sbom/manifests
             ${{ runner.temp }}/extension-sbom/predicates
 
@@ -229,6 +290,36 @@ jobs:
         run: |
           jq -r '.[] | (."image.name" | sub(",.*";"")) + "@" + ."containerimage.digest"' <<< "$BUILD_METADATA" | \
             xargs cosign sign --yes
+
+  attest-sboms:
+    name: Attest aggregate SBOM (${{ matrix.sbom.target }})
+    runs-on: ubuntu-24.04
+    needs:
+      - testbuild
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        sbom: ${{ fromJson(needs.testbuild.outputs.sbom_manifest) }}
+    steps:
+      - name: Download composed SBOMs
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: extension-sboms-${{ inputs.extension_name }}-${{ github.run_id }}
+          path: extension-sboms
+
+      - name: Attest aggregate SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-name: ${{ matrix.sbom.testingSubject }}
+          subject-digest: ${{ matrix.sbom.indexDigest }}
+          sbom-path: extension-sboms/${{ matrix.sbom.predicatePath }}
+          push-to-registry: true
+          create-storage-record: false
 
   security:
     name: Security checks
@@ -342,13 +433,12 @@ jobs:
     runs-on: ubuntu-24.04
     needs:
       - testbuild
+      - attest-sboms
       - security
       - smoke-test
     permissions:
       contents: read
       packages: write
-      # Required by the cosign step
-      id-token: write
     steps:
       - name: Copy to production
         uses: cloudnative-pg/postgres-containers/.github/actions/copy-images@main
@@ -363,16 +453,19 @@ jobs:
           name: extension-sboms-${{ inputs.extension_name }}-${{ github.run_id }}
           path: extension-sboms
 
-      - name: Install cosign for promoted SBOMs
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-
-      - name: Attach SBOMs to production images
+      - name: Verify copied aggregate SBOM subjects
         run: |
           set -Eeuo pipefail
 
-          while IFS=$'\t' read -r testing_image architecture predicate_path; do
-            test -n "${testing_image}"
-            production_image="${testing_image/-testing:/:}"
+          jq -e 'type == "array" and length > 0' extension-sboms/attestation-manifest.json > /dev/null
+          while IFS= read -r record; do
+            testing_image=$(jq -r '.testingImage' <<< "${record}")
+            production_image=$(jq -r '.productionImage' <<< "${record}")
+            index_digest=$(jq -r '.indexDigest' <<< "${record}")
+            predicate_path=$(jq -r '.predicatePath' <<< "${record}")
+            test -n "${testing_image}" && test "${testing_image}" != "null"
+            test -n "${production_image}" && test "${production_image}" != "null"
+            test -n "${index_digest}" && test "${index_digest}" != "null"
             predicate="extension-sboms/${predicate_path}"
             test -s "${predicate}"
             jq -e --arg namespace "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1" '
@@ -381,18 +474,42 @@ jobs:
               any((.annotations // [])[];
                 .spdxElementId == "SPDXRef-DOCUMENT" and
                 .annotationType == "OTHER" and
-                (.comment | startswith($namespace + " ")))' \
+              (.comment | startswith($namespace + " ")))' \
               "${predicate}"
 
-            digest=$(docker buildx imagetools inspect "${production_image}" --raw | \
-              jq -r --arg architecture "${architecture}" '
-                [.manifests[] |
-                 select(.platform.os == "linux" and .platform.architecture == $architecture) |
-                 .digest] | first // empty')
-            test -n "${digest}" && test "${digest}" != "null"
+            copied_index_digest=$(docker buildx imagetools inspect "${production_image}" --raw | \
+              sha256sum | awk '{print "sha256:" $1}')
+            test "${copied_index_digest}" = "${index_digest}"
+          done < <(jq -c '.[]' extension-sboms/attestation-manifest.json)
 
-            cosign attest --yes \
-              --type https://spdx.dev/Document \
-              --predicate "${predicate}" \
-              "${production_image}@${digest}"
-          done < extension-sboms/manifest.tsv
+  attest-production-sboms:
+    name: Attest production aggregate SBOM (${{ matrix.sbom.target }})
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    needs:
+      - copytoproduction
+      - testbuild
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        sbom: ${{ fromJson(needs.testbuild.outputs.sbom_manifest) }}
+    steps:
+      - name: Download composed SBOMs
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: extension-sboms-${{ inputs.extension_name }}-${{ github.run_id }}
+          path: extension-sboms
+
+      - name: Attest production aggregate SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-name: ${{ matrix.sbom.productionSubject }}
+          subject-digest: ${{ matrix.sbom.indexDigest }}
+          sbom-path: extension-sboms/${{ matrix.sbom.predicatePath }}
+          push-to-registry: true
+          create-storage-record: false
