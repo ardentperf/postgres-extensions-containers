@@ -229,6 +229,9 @@ plus an extension-specific artifacts package for files without a package owner.
 The file list is limited to files actually shipped in the image, including
 copied system libraries and license files. Relationships are trimmed and
 rewritten to match the resulting package and file lists.
+The workflow adds the provisional composition manifest as a canonical,
+document-level SPDX `OTHER` annotation after `compose_sbom.py` produces the
+aggregate; the composer itself remains focused on SBOM inventory composition.
 
 The final scratch stage is not scanned or read as an SBOM. During CI, the
 builder SBOM and its final-image file subjects are composed into one SPDX

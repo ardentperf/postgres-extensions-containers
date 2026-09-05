@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 import copy
-import hashlib
 import json
 import sys
-from tempfile import TemporaryDirectory
 import unittest
 from pathlib import Path
 
@@ -76,206 +74,8 @@ def builder_document(subjects):
     }
 
 
-def provenance_manifest():
-    return {
-        "schemaVersion": "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1",
-        "annotationDate": "2026-09-05T12:00:00Z",
-        "inputs": {
-            "builderSbom": {"sha256": "a" * 64},
-            "buildDefinition": {"sha256": "b" * 64},
-        },
-        "image": {
-            "sourceCommit": "c" * 40,
-            "target": "plr-1.0.0-18-bookworm",
-            "platform": "linux/amd64",
-            "manifestDigest": "sha256:" + "d" * 64,
-        },
-        "composer": {
-            "revision": "e" * 40,
-            "command": "./scripts/compose_sbom.py --builder-sbom builder.json",
-            "interpreter": "Python 3.13.0",
-            "toolVersions": {
-                "python": "Python 3.13.0",
-                "jq": "jq-1.7",
-            },
-        },
-        "workflow": {
-            "repository": "cnpg-extensions/postgres-extensions-containers",
-            "name": "Build, test and publish a target extension",
-            "ref": "refs/heads/main",
-            "runId": "12345",
-            "runAttempt": "1",
-            "actor": "octocat",
-        },
-    }
-
-
-def aggregate_provenance_manifest():
-    return {
-        "schemaVersion": "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1",
-        "annotationDate": "2026-09-05T12:00:00Z",
-        "inputs": {
-            "builderSboms": [
-                {"platform": "linux/amd64", "sha256": "a" * 64},
-                {"platform": "linux/arm64", "sha256": "b" * 64},
-            ],
-            "buildDefinition": {"sha256": "c" * 64},
-        },
-        "image": {
-            "sourceCommit": "d" * 40,
-            "target": "plr-1.0.0-18-bookworm",
-            "platforms": [
-                {
-                    "platform": "linux/amd64",
-                    "manifestDigest": "sha256:" + "e" * 64,
-                },
-                {
-                    "platform": "linux/arm64",
-                    "manifestDigest": "sha256:" + "f" * 64,
-                },
-            ],
-            "indexDigest": "sha256:" + "1" * 64,
-        },
-        "composer": {
-            "revision": "2" * 40,
-            "command": "./scripts/compose_sbom.py --aggregate-from amd64.json --aggregate-from arm64.json",
-            "interpreter": "Python 3.13.0",
-            "toolVersions": {
-                "python": "Python 3.13.0",
-                "jq": "jq-1.7",
-                "actionsAttest": "actions/attest@v4",
-            },
-        },
-        "workflow": {
-            "repository": "cnpg-extensions/postgres-extensions-containers",
-            "name": "Build, test and publish a target extension",
-            "ref": "refs/heads/main",
-            "runId": "12345",
-            "runAttempt": "1",
-            "actor": "octocat",
-        },
-    }
-
-
 class ComposeSbomTest(unittest.TestCase):
-    def test_provenance_annotation_has_canonical_document_level_structure(self):
-        manifest = provenance_manifest()
-        output = compose(
-            builder_document([
-                {"name": "lib/ext.so", "digest": {"sha256": "extension"}},
-            ]),
-            extension_name="plr",
-            provenance_manifest=manifest,
-        )
-
-        self.assertEqual(len(output["annotations"]), 1)
-        annotation = output["annotations"][0]
-        self.assertEqual(annotation["annotationDate"], manifest["annotationDate"])
-        self.assertEqual(annotation["annotationType"], "OTHER")
-        self.assertEqual(annotation["annotator"], "Tool: compose_sbom.py - 1.0")
-        self.assertEqual(annotation["spdxElementId"], "SPDXRef-DOCUMENT")
-
-        namespace, serialized = annotation["comment"].split(" ", 1)
-        self.assertEqual(
-            namespace,
-            "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1",
-        )
-        self.assertEqual(json.loads(serialized), manifest)
-        self.assertEqual(
-            serialized,
-            json.dumps(manifest, ensure_ascii=False, allow_nan=False,
-                       sort_keys=True, separators=(",", ":")),
-        )
-
-    def test_provenance_annotation_is_deterministic(self):
-        document = builder_document([
-            {"name": "lib/ext.so", "digest": {"sha256": "extension"}},
-        ])
-        manifest = provenance_manifest()
-
-        first = compose(copy.deepcopy(document), extension_name="plr",
-                        provenance_manifest=manifest)
-        second = compose(copy.deepcopy(document), extension_name="plr",
-                         provenance_manifest=manifest)
-
-        self.assertEqual(first, second)
-        self.assertEqual(
-            json.dumps(first, sort_keys=True, separators=(",", ":")),
-            json.dumps(second, sort_keys=True, separators=(",", ":")),
-        )
-
-    def test_provenance_manifest_builder_hash_is_checked_when_read_from_file(self):
-        document = builder_document([
-            {"name": "lib/ext.so", "digest": {"sha256": "extension"}},
-        ])
-        with TemporaryDirectory() as directory:
-            builder_path = Path(directory) / "builder.json"
-            manifest_path = Path(directory) / "provenance.json"
-            builder_path.write_text(json.dumps(document), encoding="utf-8")
-            manifest = provenance_manifest()
-            manifest["inputs"]["builderSbom"]["sha256"] = hashlib.sha256(
-                builder_path.read_bytes()
-            ).hexdigest()
-            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-
-            output = compose(
-                document,
-                extension_name="plr",
-                builder_path=builder_path,
-                provenance_manifest=manifest_path,
-            )
-            self.assertIn(
-                "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1",
-                output["annotations"][0]["comment"],
-            )
-
-            manifest["inputs"]["builderSbom"]["sha256"] = "0" * 64
-            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "builder SBOM hash"):
-                compose(
-                    document,
-                    extension_name="plr",
-                    builder_path=builder_path,
-                    provenance_manifest=manifest_path,
-                )
-
-    def test_missing_provenance_input_fails_closed(self):
-        for missing in ("inputs", "image", "composer", "workflow"):
-            with self.subTest(missing=missing):
-                manifest = provenance_manifest()
-                del manifest[missing]
-                with self.assertRaisesRegex(ValueError, "provenance manifest missing"):
-                    compose(
-                        builder_document([
-                            {"name": "lib/ext.so", "digest": {"sha256": "extension"}},
-                        ]),
-                        extension_name="plr",
-                        provenance_manifest=manifest,
-                    )
-
-        manifest = provenance_manifest()
-        del manifest["inputs"]["buildDefinition"]
-        with self.assertRaisesRegex(ValueError, "inputs.buildDefinition"):
-            compose(
-                builder_document([
-                    {"name": "lib/ext.so", "digest": {"sha256": "extension"}},
-                ]),
-                extension_name="plr",
-                provenance_manifest=manifest,
-            )
-
-        manifest = aggregate_provenance_manifest()
-        del manifest["inputs"]["builderSboms"]
-        with self.assertRaisesRegex(ValueError, "inputs.builderSboms"):
-            aggregate(
-                [("linux/amd64", compose(builder_document([
-                    {"name": "lib/ext.so", "digest": {"sha256": "extension"}},
-                ]), extension_name="plr"))],
-                extension_name="plr",
-                provenance_manifest=manifest,
-            )
-
-    def test_aggregate_merges_platform_documents_and_adds_one_annotation(self):
+    def test_aggregate_merges_platform_documents(self):
         amd64 = builder_document([
             {"name": "lib/ext.so", "digest": {"sha256": "extension"}},
         ])
@@ -295,67 +95,19 @@ class ComposeSbomTest(unittest.TestCase):
             "relationshipType": "CONTAINS",
             "relatedSpdxElement": "SPDXRef-File-arm-only",
         })
-        manifest = aggregate_provenance_manifest()
-
         output = aggregate(
             [
                 ("linux/amd64", compose(amd64, extension_name="plr")),
                 ("linux/arm64", compose(arm64, extension_name="plr")),
             ],
             extension_name="plr",
-            provenance_manifest=manifest,
         )
 
         self.assertEqual(output["name"], "plr-multi-platform-sbom")
-        self.assertEqual(
-            output["documentNamespace"],
-            "https://github.com/cnpg-extensions/postgres-extensions-containers/"
-            "sbom-composition/v1/documents/plr/sha256-" + "1" * 64,
-        )
         self.assertIn("extension", {item["name"] for item in output["packages"]})
         self.assertIn("arm-only", {item["name"] for item in output["packages"]})
-        self.assertEqual(len(output["annotations"]), 1)
-        annotation = output["annotations"][0]
-        self.assertEqual(annotation["spdxElementId"], "SPDXRef-DOCUMENT")
-        self.assertEqual(annotation["annotationType"], "OTHER")
-        self.assertIn('"builderSboms"', annotation["comment"])
-        self.assertIn('"indexDigest":"sha256:' + "1" * 64 + '"', annotation["comment"])
 
-    def test_aggregate_builder_hashes_are_checked_for_each_platform(self):
-        documents = [
-            builder_document([
-                {"name": "lib/ext.so", "digest": {"sha256": "extension"}},
-            ]),
-            builder_document([
-                {"name": "lib/ext.so", "digest": {"sha256": "extension-arm64"}},
-            ]),
-        ]
-        manifest = aggregate_provenance_manifest()
-        with TemporaryDirectory() as directory:
-            paths = []
-            for index, document in enumerate(documents):
-                path = Path(directory) / f"builder-{index}.json"
-                path.write_text(json.dumps(document), encoding="utf-8")
-                paths.append(path)
-            manifest["inputs"]["builderSboms"][0]["sha256"] = hashlib.sha256(
-                paths[0].read_bytes()
-            ).hexdigest()
-            manifest["inputs"]["builderSboms"][1]["sha256"] = hashlib.sha256(
-                paths[1].read_bytes()
-            ).hexdigest()
-            with self.assertRaisesRegex(ValueError, "builder SBOM hash"):
-                aggregate(
-                    [
-                        ("linux/amd64", compose(documents[0], extension_name="plr")),
-                        ("linux/arm64", compose(documents[1], extension_name="plr")),
-                    ],
-                    extension_name="plr",
-                    provenance_manifest=manifest,
-                    builder_paths=[("linux/amd64", paths[1]), ("linux/arm64", paths[0])],
-                )
-
-    def test_aggregate_annotation_is_deterministic(self):
-        manifest = aggregate_provenance_manifest()
+    def test_aggregate_is_deterministic(self):
         documents = [
             ("linux/amd64", compose(builder_document([
                 {"name": "lib/ext.so", "digest": {"sha256": "extension"}},
@@ -364,8 +116,8 @@ class ComposeSbomTest(unittest.TestCase):
                 {"name": "lib/ext.so", "digest": {"sha256": "extension-arm64"}},
             ]), extension_name="plr")),
         ]
-        first = aggregate(documents, extension_name="plr", provenance_manifest=manifest)
-        second = aggregate(copy.deepcopy(documents), extension_name="plr", provenance_manifest=manifest)
+        first = aggregate(documents, extension_name="plr")
+        second = aggregate(copy.deepcopy(documents), extension_name="plr")
         self.assertEqual(first, second)
         self.assertEqual(
             json.dumps(first, sort_keys=True, separators=(",", ":")),

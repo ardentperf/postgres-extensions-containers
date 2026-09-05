@@ -15,180 +15,11 @@ from typing import Any, Sequence
 
 
 EXTENSION_PACKAGE_ID = "SPDXRef-Package-extension-payload"
-COMPOSITION_NAMESPACE = (
-    "https://github.com/cnpg-extensions/postgres-extensions-containers/"
-    "sbom-composition/v1"
-)
-COMPOSER_VERSION = "1.0"
 
 
 def read_json(path: Path) -> dict[str, Any]:
     with path.open(encoding="utf-8") as stream:
         return json.load(stream)
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _required_string(value: Any, name: str) -> str:
-    if not isinstance(value, str) or not value:
-        raise ValueError(f"provenance manifest missing {name}")
-    return value
-
-
-def _required_mapping(value: Any, name: str) -> dict[str, Any]:
-    if not isinstance(value, dict):
-        raise ValueError(f"provenance manifest missing {name}")
-    return value
-
-
-def validate_provenance_manifest(
-    manifest: dict[str, Any],
-    *,
-    builder_path: Path | None = None,
-    builder_paths: Sequence[tuple[str, Path]] | None = None,
-) -> None:
-    """Check the required provenance inputs and verify builder-file hashes."""
-
-    if not isinstance(manifest, dict):
-        raise ValueError("provenance manifest must contain a JSON object")
-    if manifest.get("schemaVersion") != COMPOSITION_NAMESPACE:
-        raise ValueError(
-            f"provenance manifest schemaVersion must be {COMPOSITION_NAMESPACE!r}"
-        )
-
-    _required_string(manifest.get("annotationDate"), "annotationDate")
-    inputs = _required_mapping(manifest.get("inputs"), "inputs")
-    image = _required_mapping(manifest.get("image"), "image")
-    composer = _required_mapping(manifest.get("composer"), "composer")
-    workflow = _required_mapping(manifest.get("workflow"), "workflow")
-
-    builder_digests: dict[str, str] = {}
-    if "builderSboms" in inputs:
-        builder_records = inputs["builderSboms"]
-        if not isinstance(builder_records, list) or not builder_records:
-            raise ValueError("provenance manifest inputs.builderSboms must be a non-empty list")
-        for index, input_record_value in enumerate(builder_records):
-            input_record = _required_mapping(
-                input_record_value, f"inputs.builderSboms[{index}]"
-            )
-            platform = _required_string(input_record.get("platform"), f"inputs.builderSboms[{index}].platform")
-            builder_digests[platform] = _required_string(
-                input_record.get("sha256"), f"inputs.builderSboms[{index}].sha256"
-            )
-    elif "platforms" in image:
-        raise ValueError("provenance manifest missing inputs.builderSboms")
-    else:
-        input_record = _required_mapping(inputs.get("builderSbom"), "inputs.builderSbom")
-        _required_string(input_record.get("sha256"), "inputs.builderSbom.sha256")
-
-    build_definition = _required_mapping(inputs.get("buildDefinition"), "inputs.buildDefinition")
-    _required_string(build_definition.get("sha256"), "inputs.buildDefinition.sha256")
-
-    for field in ("sourceCommit", "target"):
-        _required_string(image.get(field), f"image.{field}")
-    if "platforms" in image:
-        platform_records = image["platforms"]
-        if not isinstance(platform_records, list) or not platform_records:
-            raise ValueError("provenance manifest image.platforms must be a non-empty list")
-        image_platforms = set()
-        for index, platform_record_value in enumerate(platform_records):
-            platform_record = _required_mapping(
-                platform_record_value, f"image.platforms[{index}]"
-            )
-            platform = _required_string(
-                platform_record.get("platform"), f"image.platforms[{index}].platform"
-            )
-            image_platforms.add(platform)
-            _required_string(
-                platform_record.get("manifestDigest"),
-                f"image.platforms[{index}].manifestDigest",
-            )
-        _required_string(image.get("indexDigest"), "image.indexDigest")
-        if builder_digests and set(builder_digests) != image_platforms:
-            raise ValueError("provenance manifest builder and image platform sets do not match")
-    else:
-        for field in ("platform", "manifestDigest"):
-            _required_string(image.get(field), f"image.{field}")
-
-    for field in ("revision", "command", "interpreter"):
-        _required_string(composer.get(field), f"composer.{field}")
-    tool_versions = _required_mapping(composer.get("toolVersions"), "composer.toolVersions")
-    if not tool_versions:
-        raise ValueError("provenance manifest composer.toolVersions must contain tool versions")
-
-    for field in ("repository", "name", "ref", "runId", "runAttempt"):
-        _required_string(workflow.get(field), f"workflow.{field}")
-
-    if builder_path is not None:
-        if not builder_path.is_file():
-            raise ValueError(f"provenance builder SBOM is missing: {builder_path}")
-        if sha256_file(builder_path) != inputs["builderSbom"]["sha256"]:
-            raise ValueError(
-                "provenance manifest builder SBOM hash does not match "
-                f"{builder_path}"
-            )
-    if builder_paths is not None:
-        if "builderSboms" not in inputs:
-            raise ValueError(
-                "provenance manifest must use inputs.builderSboms for aggregate validation"
-            )
-        if {platform for platform, _ in builder_paths} != set(builder_digests):
-            raise ValueError(
-                "provenance builder paths and manifest platform sets do not match"
-            )
-        for platform, path in builder_paths:
-            if not path.is_file():
-                raise ValueError(f"provenance builder SBOM is missing: {path}")
-            if sha256_file(path) != builder_digests[platform]:
-                raise ValueError(
-                    "provenance manifest builder SBOM hash does not match "
-                    f"{path} ({platform})"
-                )
-
-
-def _provenance_input(
-    provenance_manifest: dict[str, Any] | Path | str,
-) -> tuple[dict[str, Any], Path | None]:
-    if isinstance(provenance_manifest, (Path, str)):
-        path = Path(provenance_manifest)
-        return read_json(path), path
-    return provenance_manifest, None
-
-
-def provenance_annotation(
-    provenance_manifest: dict[str, Any] | Path | str,
-    *,
-    builder_path: Path | None = None,
-    builder_paths: Sequence[tuple[str, Path]] | None = None,
-) -> dict[str, Any]:
-    """Build the deterministic SPDX annotation for a composition manifest."""
-
-    manifest, manifest_path = _provenance_input(provenance_manifest)
-    validate_provenance_manifest(
-        manifest,
-        builder_path=builder_path if manifest_path is not None else None,
-        builder_paths=builder_paths,
-    )
-    canonical_manifest = json.dumps(
-        manifest,
-        ensure_ascii=False,
-        allow_nan=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return {
-        "annotationDate": manifest["annotationDate"],
-        "annotationType": "OTHER",
-        "annotator": f"Tool: compose_sbom.py - {COMPOSER_VERSION}",
-        "comment": f"{COMPOSITION_NAMESPACE} {canonical_manifest}",
-        "spdxElementId": "SPDXRef-DOCUMENT",
-    }
 
 
 def checksum_key(algorithm: str, value: str) -> tuple[str, str]:
@@ -236,7 +67,6 @@ def file_id(name: str, algorithm: str, value: str) -> str:
 def compose(builder_document: dict[str, Any], *,
             extension_name: str,
             builder_path: Path = Path("builder"),
-            provenance_manifest: dict[str, Any] | Path | str | None = None,
             ) -> dict[str, Any]:
     """Return a raw SPDX predicate composed from a builder attestation."""
 
@@ -433,27 +263,6 @@ def compose(builder_document: dict[str, Any], *,
             }
             for file_id_value in sorted(extension_file_ids)
         )
-    if provenance_manifest is not None:
-        annotation = provenance_annotation(
-            provenance_manifest,
-            builder_path=builder_path,
-        )
-        annotations = output.get("annotations", [])
-        if not isinstance(annotations, list):
-            raise ValueError("SPDX annotations must be a list")
-        annotations = [
-            existing
-            for existing in annotations
-            if not (
-                isinstance(existing, dict)
-                and existing.get("spdxElementId") == "SPDXRef-DOCUMENT"
-                and existing.get("annotationType") == "OTHER"
-                and isinstance(existing.get("comment"), str)
-                and existing["comment"].startswith(f"{COMPOSITION_NAMESPACE} ")
-            )
-        ]
-        annotations.append(annotation)
-        output["annotations"] = annotations
     return output
 
 
@@ -461,8 +270,6 @@ def aggregate(
     composed_documents: Sequence[tuple[str, dict[str, Any]]],
     *,
     extension_name: str,
-    provenance_manifest: dict[str, Any] | Path | str | None = None,
-    builder_paths: Sequence[tuple[str, Path]] | None = None,
 ) -> dict[str, Any]:
     """Merge composed SPDX documents into one multi-platform document.
 
@@ -556,31 +363,6 @@ def aggregate(
     output["relationships"] = [relationships[key] for key in sorted(relationships)]
     if annotations:
         output["annotations"] = [annotations[key] for key in sorted(annotations)]
-    if provenance_manifest is not None:
-        manifest, _ = _provenance_input(provenance_manifest)
-        output["annotations"] = [
-            annotation
-            for annotation in output.get("annotations", [])
-            if not (
-                isinstance(annotation, dict)
-                and annotation.get("spdxElementId") == "SPDXRef-DOCUMENT"
-                and annotation.get("annotationType") == "OTHER"
-                and isinstance(annotation.get("comment"), str)
-                and annotation["comment"].startswith(f"{COMPOSITION_NAMESPACE} ")
-            )
-        ]
-        annotation = provenance_annotation(
-            manifest,
-            builder_paths=builder_paths,
-        )
-        index_digest = manifest["image"].get("indexDigest")
-        if index_digest:
-            output["documentNamespace"] = (
-                f"{COMPOSITION_NAMESPACE}/documents/"
-                f"{re.sub(r'[^A-Za-z0-9.-]+', '-', extension_name).strip('-')}/"
-                f"{index_digest.replace(':', '-')}"
-            )
-        output["annotations"].append(annotation)
     return output
 
 
@@ -607,11 +389,6 @@ def main() -> int:
     )
     parser.add_argument("--extension-name", required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument(
-        "--provenance-manifest",
-        type=Path,
-        help="JSON manifest to embed as a signed SPDX composition annotation",
-    )
     args = parser.parse_args()
 
     builder_sboms = args.builder_sbom or []
@@ -620,16 +397,12 @@ def main() -> int:
     if aggregate_inputs:
         if len(aggregate_inputs) != len(platforms):
             parser.error("--aggregate-from and --platform must have the same number of values")
-        if len(aggregate_inputs) != len(builder_sboms):
-            parser.error("aggregate mode requires one --builder-sbom per --aggregate-from")
         output = aggregate(
             [
                 (platform, read_json(path))
                 for platform, path in zip(platforms, aggregate_inputs)
             ],
             extension_name=args.extension_name,
-            provenance_manifest=args.provenance_manifest,
-            builder_paths=list(zip(platforms, builder_sboms)),
         )
     else:
         if len(builder_sboms) != 1:
@@ -638,7 +411,6 @@ def main() -> int:
             read_json(builder_sboms[0]),
             extension_name=args.extension_name,
             builder_path=builder_sboms[0],
-            provenance_manifest=args.provenance_manifest,
         )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("w", encoding="utf-8") as stream:

@@ -165,9 +165,9 @@ jobs:
             predicate_directory="${working_directory}/predicates/${bake_target}"
             predicate="${predicate_directory}/extension-sbom.spdx.json"
             mkdir -p "${predicate_directory}"
-            composer_command="./scripts/compose_sbom.py --extension-name ${EXTENSION_NAME} --provenance-manifest ${provenance_manifest} --output ${predicate}"
+            composer_command="./scripts/compose_sbom.py --extension-name ${EXTENSION_NAME} --output ${predicate}"
             for platform in "${platforms[@]}"; do
-              composer_command+=" --builder-sbom <${platform}> --aggregate-from <${platform}> --platform ${platform}"
+              composer_command+=" --aggregate-from <${platform}> --platform ${platform}"
             done
             cat > "${provenance_manifest}" <<EOF
           {
@@ -217,17 +217,31 @@ jobs:
 
             compose_args=(
               --extension-name "${EXTENSION_NAME}"
-              --provenance-manifest "${provenance_manifest}"
               --output "${predicate}"
             )
             for index in "${!platforms[@]}"; do
               compose_args+=(
-                --builder-sbom "${builder_sbom_paths[$index]}"
                 --aggregate-from "${composed_predicate_paths[$index]}"
                 --platform "${platforms[$index]}"
               )
             done
             ./scripts/compose_sbom.py "${compose_args[@]}"
+
+            jq -e \
+              --arg namespace "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1" \
+              --arg annotation_date "$(jq -r '.annotationDate' "${provenance_manifest}")" \
+              --arg provenance "$(jq -cS . "${provenance_manifest}")" \
+              --arg document_namespace "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1/documents/${EXTENSION_NAME}/${image_index_digest//:/-}" \
+              '.documentNamespace = $document_namespace |
+               .annotations = ((.annotations // []) + [{
+                 annotationDate: $annotation_date,
+                 annotationType: "OTHER",
+                 annotator: "Tool: bake_targets.yml",
+                 comment: ($namespace + " " + $provenance),
+                 spdxElementId: "SPDXRef-DOCUMENT"
+               }])' \
+              "${predicate}" > "${predicate}.tmp"
+            mv "${predicate}.tmp" "${predicate}"
 
             test -s "${predicate}"
             jq -e --arg namespace "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1" '
