@@ -78,7 +78,7 @@ def builder_document(subjects):
 
 def provenance_manifest():
     return {
-        "schemaVersion": "cnpg.sbom-composition/v1",
+        "schemaVersion": "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1",
         "annotationDate": "2026-09-05T12:00:00Z",
         "inputs": {
             "builderSbom": {"sha256": "a" * 64},
@@ -129,7 +129,10 @@ class ComposeSbomTest(unittest.TestCase):
         self.assertEqual(annotation["spdxElementId"], "SPDXRef-DOCUMENT")
 
         namespace, serialized = annotation["comment"].split(" ", 1)
-        self.assertEqual(namespace, "cnpg.sbom-composition/v1")
+        self.assertEqual(
+            namespace,
+            "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1",
+        )
         self.assertEqual(json.loads(serialized), manifest)
         self.assertEqual(
             serialized,
@@ -174,7 +177,10 @@ class ComposeSbomTest(unittest.TestCase):
                 builder_path=builder_path,
                 provenance_manifest=manifest_path,
             )
-            self.assertIn("cnpg.sbom-composition/v1", output["annotations"][0]["comment"])
+            self.assertIn(
+                "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1",
+                output["annotations"][0]["comment"],
+            )
 
             manifest["inputs"]["builderSbom"]["sha256"] = "0" * 64
             manifest_path.write_text(json.dumps(manifest), encoding="utf-8")

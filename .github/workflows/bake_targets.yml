@@ -162,7 +162,7 @@ jobs:
                 --arg run_attempt "${GITHUB_RUN_ATTEMPT}" \
                 --arg actor "${GITHUB_ACTOR}" \
                 '{
-                  schemaVersion: "cnpg.sbom-composition/v1",
+                  schemaVersion: "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1",
                   annotationDate: $annotation_date,
                   inputs: {
                     builderSbom: {sha256: $builder_sbom_sha256},
@@ -196,7 +196,7 @@ jobs:
                   }
                 }' > "${provenance_manifest}"
               test -s "${provenance_manifest}"
-              jq -e --arg namespace "cnpg.sbom-composition/v1" \
+              jq -e --arg namespace "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1" \
                 --arg builder_sbom_sha256 "${builder_sbom_sha256}" \
                 --arg build_definition_sha256 "${build_definition_sha256}" \
                 '.schemaVersion == $namespace and
@@ -211,7 +211,7 @@ jobs:
                 --output "${predicate}"
 
               test -s "${predicate}"
-              jq -e --arg namespace "cnpg.sbom-composition/v1" '
+              jq -e --arg namespace "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1" '
                 .spdxVersion == "SPDX-2.3" and
                 .SPDXID == "SPDXRef-DOCUMENT" and
                 any((.annotations // [])[];
@@ -394,7 +394,7 @@ jobs:
             production_image="${testing_image/-testing:/:}"
             predicate="extension-sboms/${predicate_path}"
             test -s "${predicate}"
-            jq -e --arg namespace "cnpg.sbom-composition/v1" '
+            jq -e --arg namespace "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1" '
               .spdxVersion == "SPDX-2.3" and
               .SPDXID == "SPDXRef-DOCUMENT" and
               any((.annotations // [])[];

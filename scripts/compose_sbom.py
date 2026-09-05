@@ -15,7 +15,10 @@ from typing import Any
 
 
 EXTENSION_PACKAGE_ID = "SPDXRef-Package-extension-payload"
-COMPOSITION_NAMESPACE = "cnpg.sbom-composition/v1"
+COMPOSITION_NAMESPACE = (
+    "https://github.com/cnpg-extensions/postgres-extensions-containers/"
+    "sbom-composition/v1"
+)
 COMPOSER_VERSION = "1.0"
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
