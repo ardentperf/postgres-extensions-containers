@@ -115,7 +115,7 @@ jobs:
 
               builder_sbom="${output_directory}/sbom-builder.spdx.json"
               test -s "${builder_sbom}"
-              jq -e '.predicateType == "https://spdx.dev/Document" and .predicate.name == "builder" and (.subject | length > 0)' "${builder_sbom}"
+              jq -e '.predicateType == "https://spdx.dev/Document" and .predicate.name == "sbom-builder" and (.subject | length > 0)' "${builder_sbom}"
 
               ./scripts/compose_sbom.py \
                 --builder-sbom "${builder_sbom}" \
