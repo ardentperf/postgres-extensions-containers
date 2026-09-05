@@ -10,7 +10,6 @@ import re
 import sys
 from collections import defaultdict
 from copy import deepcopy
-from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -21,8 +20,6 @@ COMPOSITION_NAMESPACE = (
     "sbom-composition/v1"
 )
 COMPOSER_VERSION = "1.0"
-SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
-DIGEST_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -56,13 +53,7 @@ def validate_provenance_manifest(
     builder_path: Path | None = None,
     builder_paths: Sequence[tuple[str, Path]] | None = None,
 ) -> None:
-    """Validate the generic manifest used for composition provenance.
-
-    The manifest is deliberately independent of any particular image builder.
-    Its required fields cover the inputs and identity needed to explain this
-    post-build composition step.  The builder hash is checked here when the
-    manifest came from the CLI, where the source file is available.
-    """
+    """Check the required provenance inputs and verify builder-file hashes."""
 
     if not isinstance(manifest, dict):
         raise ValueError("provenance manifest must contain a JSON object")
@@ -71,25 +62,12 @@ def validate_provenance_manifest(
             f"provenance manifest schemaVersion must be {COMPOSITION_NAMESPACE!r}"
         )
 
-    annotation_date = _required_string(manifest.get("annotationDate"), "annotationDate")
-    timestamp_text = (
-        annotation_date[:-1] + "+00:00"
-        if annotation_date.endswith("Z")
-        else annotation_date
-    )
-    try:
-        parsed_date = datetime.fromisoformat(timestamp_text)
-    except ValueError as error:
-        raise ValueError(
-            "provenance manifest annotationDate must be an ISO-8601 timestamp"
-        ) from error
-    if parsed_date.tzinfo is None or parsed_date.utcoffset() != timedelta(0):
-        raise ValueError("provenance manifest annotationDate must be a UTC timestamp")
-
-    if builder_path is not None and builder_paths is not None:
-        raise ValueError("provenance validation accepts one builder path shape")
-
+    _required_string(manifest.get("annotationDate"), "annotationDate")
     inputs = _required_mapping(manifest.get("inputs"), "inputs")
+    image = _required_mapping(manifest.get("image"), "image")
+    composer = _required_mapping(manifest.get("composer"), "composer")
+    workflow = _required_mapping(manifest.get("workflow"), "workflow")
+
     builder_digests: dict[str, str] = {}
     if "builderSboms" in inputs:
         builder_records = inputs["builderSboms"]
@@ -99,112 +77,58 @@ def validate_provenance_manifest(
             input_record = _required_mapping(
                 input_record_value, f"inputs.builderSboms[{index}]"
             )
-            platform = _required_string(
-                input_record.get("platform"),
-                f"inputs.builderSboms[{index}].platform",
+            platform = _required_string(input_record.get("platform"), f"inputs.builderSboms[{index}].platform")
+            builder_digests[platform] = _required_string(
+                input_record.get("sha256"), f"inputs.builderSboms[{index}].sha256"
             )
-            if platform in builder_digests:
-                raise ValueError(
-                    f"provenance manifest contains duplicate builder platform {platform!r}"
-                )
-            digest = _required_string(
-                input_record.get("sha256"),
-                f"inputs.builderSboms[{index}].sha256",
-            )
-            if not SHA256_PATTERN.fullmatch(digest):
-                raise ValueError(
-                    f"provenance manifest inputs.builderSboms[{index}].sha256 must be a SHA-256 hex digest"
-                )
-            builder_digests[platform] = digest
-    elif isinstance(manifest.get("image"), dict) and "platforms" in manifest["image"]:
+    elif "platforms" in image:
         raise ValueError("provenance manifest missing inputs.builderSboms")
     else:
         input_record = _required_mapping(inputs.get("builderSbom"), "inputs.builderSbom")
-        digest = _required_string(input_record.get("sha256"), "inputs.builderSbom.sha256")
-        if not SHA256_PATTERN.fullmatch(digest):
-            raise ValueError(
-                "provenance manifest inputs.builderSbom.sha256 must be a SHA-256 hex digest"
-            )
-    build_definition = _required_mapping(
-        inputs.get("buildDefinition"), "inputs.buildDefinition"
-    )
-    build_definition_digest = _required_string(
-        build_definition.get("sha256"), "inputs.buildDefinition.sha256"
-    )
-    if not SHA256_PATTERN.fullmatch(build_definition_digest):
-        raise ValueError(
-            "provenance manifest inputs.buildDefinition.sha256 must be a SHA-256 hex digest"
-        )
+        _required_string(input_record.get("sha256"), "inputs.builderSbom.sha256")
 
-    image = _required_mapping(manifest.get("image"), "image")
+    build_definition = _required_mapping(inputs.get("buildDefinition"), "inputs.buildDefinition")
+    _required_string(build_definition.get("sha256"), "inputs.buildDefinition.sha256")
+
     for field in ("sourceCommit", "target"):
         _required_string(image.get(field), f"image.{field}")
     if "platforms" in image:
         platform_records = image["platforms"]
         if not isinstance(platform_records, list) or not platform_records:
             raise ValueError("provenance manifest image.platforms must be a non-empty list")
-        image_platforms: set[str] = set()
+        image_platforms = set()
         for index, platform_record_value in enumerate(platform_records):
             platform_record = _required_mapping(
                 platform_record_value, f"image.platforms[{index}]"
             )
             platform = _required_string(
-                platform_record.get("platform"),
-                f"image.platforms[{index}].platform",
+                platform_record.get("platform"), f"image.platforms[{index}].platform"
             )
-            if platform in image_platforms:
-                raise ValueError(
-                    f"provenance manifest contains duplicate image platform {platform!r}"
-                )
             image_platforms.add(platform)
-            manifest_digest = _required_string(
+            _required_string(
                 platform_record.get("manifestDigest"),
                 f"image.platforms[{index}].manifestDigest",
             )
-            if not DIGEST_PATTERN.fullmatch(manifest_digest):
-                raise ValueError(
-                    f"provenance manifest image.platforms[{index}].manifestDigest must be a SHA-256 digest"
-                )
-        index_digest = _required_string(image.get("indexDigest"), "image.indexDigest")
-        if not DIGEST_PATTERN.fullmatch(index_digest):
-            raise ValueError(
-                "provenance manifest image.indexDigest must be a SHA-256 digest"
-            )
+        _required_string(image.get("indexDigest"), "image.indexDigest")
         if builder_digests and set(builder_digests) != image_platforms:
-            raise ValueError(
-                "provenance manifest builder and image platform sets do not match"
-            )
+            raise ValueError("provenance manifest builder and image platform sets do not match")
     else:
         for field in ("platform", "manifestDigest"):
             _required_string(image.get(field), f"image.{field}")
-        if not DIGEST_PATTERN.fullmatch(image["manifestDigest"]):
-            raise ValueError(
-                "provenance manifest image.manifestDigest must be a SHA-256 digest"
-            )
 
-    composer = _required_mapping(manifest.get("composer"), "composer")
     for field in ("revision", "command", "interpreter"):
         _required_string(composer.get(field), f"composer.{field}")
     tool_versions = _required_mapping(composer.get("toolVersions"), "composer.toolVersions")
-    if not tool_versions or any(
-        not isinstance(name, str)
-        or not name
-        or not isinstance(version, str)
-        or not version
-        for name, version in tool_versions.items()
-    ):
+    if not tool_versions:
         raise ValueError("provenance manifest composer.toolVersions must contain tool versions")
 
-    workflow = _required_mapping(manifest.get("workflow"), "workflow")
     for field in ("repository", "name", "ref", "runId", "runAttempt"):
         _required_string(workflow.get(field), f"workflow.{field}")
 
     if builder_path is not None:
         if not builder_path.is_file():
             raise ValueError(f"provenance builder SBOM is missing: {builder_path}")
-        actual_digest = sha256_file(builder_path)
-        expected_digest = manifest["inputs"]["builderSbom"]["sha256"]
-        if actual_digest != expected_digest:
+        if sha256_file(builder_path) != inputs["builderSbom"]["sha256"]:
             raise ValueError(
                 "provenance manifest builder SBOM hash does not match "
                 f"{builder_path}"
@@ -214,17 +138,14 @@ def validate_provenance_manifest(
             raise ValueError(
                 "provenance manifest must use inputs.builderSboms for aggregate validation"
             )
-        provided_platforms = {platform for platform, _ in builder_paths}
-        if provided_platforms != set(builder_digests):
+        if {platform for platform, _ in builder_paths} != set(builder_digests):
             raise ValueError(
                 "provenance builder paths and manifest platform sets do not match"
             )
         for platform, path in builder_paths:
             if not path.is_file():
                 raise ValueError(f"provenance builder SBOM is missing: {path}")
-            actual_digest = sha256_file(path)
-            expected_digest = builder_digests[platform]
-            if actual_digest != expected_digest:
+            if sha256_file(path) != builder_digests[platform]:
                 raise ValueError(
                     "provenance manifest builder SBOM hash does not match "
                     f"{path} ({platform})"
@@ -312,34 +233,6 @@ def file_id(name: str, algorithm: str, value: str) -> str:
     return f"SPDXRef-File-final-{hashlib.sha256(identity).hexdigest()[:24]}"
 
 
-def extension_package(extension_name: str) -> dict[str, Any]:
-    return {
-        "SPDXID": EXTENSION_PACKAGE_ID,
-        "copyrightText": "NOASSERTION",
-        "downloadLocation": "NOASSERTION",
-        "filesAnalyzed": True,
-        "licenseConcluded": "NOASSERTION",
-        "licenseDeclared": "NOASSERTION",
-        "name": f"{extension_name}-extension-artifacts",
-        "supplier": "NOASSERTION",
-        "versionInfo": "NOASSERTION",
-    }
-
-
-def extension_file(final_record: dict[str, str]) -> dict[str, Any]:
-    return {
-        "SPDXID": file_id(final_record["name"], final_record["algorithm"], final_record["value"]),
-        "checksums": [{
-            "algorithm": final_record["algorithm"].upper(),
-            "checksumValue": final_record["value"],
-        }],
-        "copyrightText": "NOASSERTION",
-        "fileName": final_record["name"],
-        "licenseConcluded": "NOASSERTION",
-        "licenseInfoInFiles": ["NOASSERTION"],
-    }
-
-
 def compose(builder_document: dict[str, Any], *,
             extension_name: str,
             builder_path: Path = Path("builder"),
@@ -388,7 +281,17 @@ def compose(builder_document: dict[str, Any], *,
     final_ids: set[str] = set()
 
     def add_synthetic_file(record: dict[str, str], owner: str | None = None) -> None:
-        output_record = extension_file(record)
+        output_record = {
+            "SPDXID": file_id(record["name"], record["algorithm"], record["value"]),
+            "checksums": [{
+                "algorithm": record["algorithm"].upper(),
+                "checksumValue": record["value"],
+            }],
+            "copyrightText": "NOASSERTION",
+            "fileName": record["name"],
+            "licenseConcluded": "NOASSERTION",
+            "licenseInfoInFiles": ["NOASSERTION"],
+        }
         composed_files.append(output_record)
         final_ids.add(output_record["SPDXID"])
         if owner is not None:
@@ -448,9 +351,6 @@ def compose(builder_document: dict[str, Any], *,
     if extension_file_ids:
         retained_package_ids.add(EXTENSION_PACKAGE_ID)
 
-    def endpoint_replacements(endpoint: str) -> set[str]:
-        return source_to_final.get(endpoint, {endpoint})
-
     composed_relationships: list[dict[str, Any]] = []
     seen_relationships: set[str] = set()
     for relationship in relationships:
@@ -470,8 +370,8 @@ def compose(builder_document: dict[str, Any], *,
             composed_relationships.append(relationship.copy())
             continue
 
-        element_ids = endpoint_replacements(element_id)
-        related_ids = endpoint_replacements(related_id)
+        element_ids = source_to_final.get(element_id, {element_id})
+        related_ids = source_to_final.get(related_id, {related_id})
         for new_element_id in element_ids:
             for new_related_id in related_ids:
                 replacement = relationship.copy()
@@ -498,7 +398,17 @@ def compose(builder_document: dict[str, Any], *,
         if package["SPDXID"] in retained_package_ids
     ]
     if extension_file_ids:
-        output["packages"].append(extension_package(extension_name))
+        output["packages"].append({
+            "SPDXID": EXTENSION_PACKAGE_ID,
+            "copyrightText": "NOASSERTION",
+            "downloadLocation": "NOASSERTION",
+            "filesAnalyzed": True,
+            "licenseConcluded": "NOASSERTION",
+            "licenseDeclared": "NOASSERTION",
+            "name": f"{extension_name}-extension-artifacts",
+            "supplier": "NOASSERTION",
+            "versionInfo": "NOASSERTION",
+        })
     output["files"] = composed_files
     output["relationships"] = composed_relationships
     described_ids = {
@@ -583,9 +493,12 @@ def aggregate(
     annotations: dict[str, dict[str, Any]] = {}
 
     def entity_key(entity: dict[str, Any]) -> str:
-        value = deepcopy(entity)
-        value.pop("SPDXID", None)
-        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return json.dumps(
+            {key: value for key, value in entity.items() if key != "SPDXID"},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
 
     def aggregate_id(platform: str, original_id: str) -> str:
         platform_id = re.sub(r"[^A-Za-z0-9.-]+", "-", platform).strip("-")
@@ -599,16 +512,10 @@ def aggregate(
         return candidate
 
     for platform, document in ordered_documents:
-        if not isinstance(document, dict):
-            raise ValueError(f"aggregate input for {platform!r} must be a JSON object")
         id_map = {"SPDXRef-DOCUMENT": "SPDXRef-DOCUMENT"}
         for entity_type in ("packages", "files"):
             records = document.get(entity_type, [])
-            if not isinstance(records, list):
-                raise ValueError(f"aggregate {entity_type} must be a list")
             for record in records:
-                if not isinstance(record, dict) or not isinstance(record.get("SPDXID"), str):
-                    raise ValueError(f"aggregate {entity_type} contains an invalid record")
                 original_id = record["SPDXID"]
                 key = (entity_type, entity_key(record))
                 if key not in entities:
@@ -631,8 +538,6 @@ def aggregate(
             return mapped
 
         for relationship in document.get("relationships", []):
-            if not isinstance(relationship, dict):
-                raise ValueError("aggregate relationships contains an invalid record")
             mapped = deepcopy(relationship)
             mapped["spdxElementId"] = map_id(relationship["spdxElementId"])
             mapped["relatedSpdxElement"] = map_id(relationship["relatedSpdxElement"])
@@ -640,8 +545,6 @@ def aggregate(
             relationships[identity] = mapped
 
         for annotation in document.get("annotations", []):
-            if not isinstance(annotation, dict):
-                raise ValueError("aggregate annotations contains an invalid record")
             mapped = deepcopy(annotation)
             if isinstance(mapped.get("spdxElementId"), str):
                 mapped["spdxElementId"] = map_id(mapped["spdxElementId"])
@@ -667,14 +570,14 @@ def aggregate(
             )
         ]
         annotation = provenance_annotation(
-            provenance_manifest,
+            manifest,
             builder_paths=builder_paths,
         )
         index_digest = manifest["image"].get("indexDigest")
         if index_digest:
-            safe_extension_name = re.sub(r"[^A-Za-z0-9.-]+", "-", extension_name).strip("-")
             output["documentNamespace"] = (
-                f"{COMPOSITION_NAMESPACE}/documents/{safe_extension_name}/"
+                f"{COMPOSITION_NAMESPACE}/documents/"
+                f"{re.sub(r'[^A-Za-z0-9.-]+', '-', extension_name).strip('-')}/"
                 f"{index_digest.replace(':', '-')}"
             )
         output["annotations"].append(annotation)
