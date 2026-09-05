@@ -101,7 +101,7 @@ jobs:
 
           mapfile -t bake_targets < <(jq -r '.target | keys[]' "${bake_definition}")
           test "${#bake_targets[@]}" -gt 0
-          attestation_records=""
+          attestation_records=()
 
           for bake_target in "${bake_targets[@]}"; do
             image=$(jq -r --arg target "${bake_target}" '.target[$target].tags[0]' "${bake_definition}")
@@ -260,27 +260,11 @@ jobs:
                 (.comment | startswith($namespace + " ")))' \
               "${predicate}"
 
-            if [[ -n "${attestation_records}" ]]; then
-              attestation_records+=$',\n'
-            fi
-            attestation_records+="$(cat <<EOF
-          {
-            "target": "${bake_target}",
-            "testingImage": "${image}",
-            "testingSubject": "${image%:*}",
-            "productionImage": "${image/-testing:/:}",
-            "productionSubject": "${image%%-testing:*}",
-            "indexDigest": "${image_index_digest}",
-            "predicatePath": "predicates/${bake_target}/extension-sbom.spdx.json"
-          }
-          EOF
-          )"
+            attestation_records+=("{\"target\":\"${bake_target}\",\"testingImage\":\"${image}\",\"testingSubject\":\"${image%:*}\",\"productionImage\":\"${image/-testing:/:}\",\"productionSubject\":\"${image%%-testing:*}\",\"indexDigest\":\"${image_index_digest}\",\"predicatePath\":\"predicates/${bake_target}/extension-sbom.spdx.json\"}")
           done
 
           cat > "${working_directory}/attestation-manifest.json" <<EOF
-          [
-          ${attestation_records}
-          ]
+          [$(IFS=,; printf '%s' "${attestation_records[*]}")]
           EOF
           jq -e . "${working_directory}/attestation-manifest.json" > /dev/null
           echo "manifest=$(jq -c . "${working_directory}/attestation-manifest.json")" >> "$GITHUB_OUTPUT"
