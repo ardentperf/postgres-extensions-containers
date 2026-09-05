@@ -80,11 +80,8 @@ jobs:
           set -Eeuo pipefail
           python3 scripts/test_compose_sbom.py
 
-          # The pushed bake uses the normal multi-platform image exporter. A
-          # local exporter cannot write a manifest list, so generate the
-          # builder-stage SBOM once per resolved target and platform. Its
-          # attestation subject contains the final image files; the final
-          # scratch-stage SBOM is not needed.
+          # Export builder-stage SBOMs per target and platform; the pushed image
+          # supplies cached layers, and the final scratch stage is not scanned.
           export environment=testing
           export registry="${IMAGE_REGISTRY}"
           working_directory="${RUNNER_TEMP}/extension-sbom"
@@ -95,9 +92,7 @@ jobs:
           bake_definition="${working_directory}/bake.json"
           docker buildx bake "${bake_files[@]}" --print > "${bake_definition}"
 
-          # BuildKit's stage-selection setting must be declared in the
-          # Dockerfile, but it can be a global ARG. Use a temporary copy for
-          # this metadata-only build so extension Dockerfiles stay ordinary.
+          # Inject the SBOM stage selector into a temporary Dockerfile.
           sbom_dockerfile="${EXTENSION_NAME}/.sbom.Dockerfile"
           cp "${EXTENSION_NAME}/Dockerfile" "${sbom_dockerfile}"
           sed -i '1iARG BUILDKIT_SBOM_SCAN_STAGE=builder' "${sbom_dockerfile}"
