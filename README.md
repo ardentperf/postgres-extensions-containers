@@ -182,8 +182,6 @@ other tools to identify the base PostgreSQL version and OS distribution.
 | `io.cloudnativepg.image.base.pgmajor` | PostgreSQL major version         | `18`                                                    |
 | `io.cloudnativepg.image.base.os`      | Operating system distribution    | `bookworm`                                              |
 | `io.cloudnativepg.image.sql.version`  | PostgreSQL extension SQL version | `1.6`                                                   |
-| `io.cloudnativepg.image.sbom.scope`   | SBOM scan scope                  | `final-packages-final-files`                             |
-| `io.cloudnativepg.image.sbom.includes` | SBOM contents                  | `Packages owning final files and extension-owned artifacts` |
 
 ### Standard OCI Labels
 
