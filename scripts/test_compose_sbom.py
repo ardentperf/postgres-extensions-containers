@@ -101,7 +101,7 @@ class ComposeSbomTest(unittest.TestCase):
 
     def test_duplicate_checksum_prefers_path_and_preserves_same_file_owners(self):
         document = builder_document([
-            {"name": "licenses/libblas3/copyright", "digest": {"sha256": "copyright"}},
+            {"name": "share/libblas3/copyright", "digest": {"sha256": "copyright"}},
         ])
         predicate = document["predicate"]
         predicate["packages"].extend([
@@ -155,7 +155,7 @@ class ComposeSbomTest(unittest.TestCase):
 
     def test_ambiguous_basename_match_is_extension_owned(self):
         document = builder_document([
-            {"name": "licenses/unknown/copyright", "digest": {"sha256": "copyright"}},
+            {"name": "share/unknown/copyright", "digest": {"sha256": "copyright"}},
         ])
         predicate = document["predicate"]
         predicate["packages"].extend([
@@ -190,14 +190,15 @@ class ComposeSbomTest(unittest.TestCase):
         output = compose(document)
         self.assertEqual([item["name"] for item in output["packages"]], ["extension-payload"])
 
-    def test_license_basename_match_to_other_package_is_extension_owned(self):
+    def test_license_path_selects_named_package(self):
         document = builder_document([
             {"name": "licenses/libgomp1/copyright", "digest": {"sha256": "copyright"}},
         ])
         predicate = document["predicate"]
-        predicate["packages"].append(
-            package("SPDXRef-Package-gcc", "gcc-14-base", "1", "pkg:generic/gcc-14-base@1")
-        )
+        predicate["packages"].extend([
+            package("SPDXRef-Package-libgomp1", "libgomp1", "1", "pkg:generic/libgomp1@1"),
+            package("SPDXRef-Package-gcc", "gcc-14-base", "1", "pkg:generic/gcc-14-base@1"),
+        ])
         predicate["files"].append({
             "SPDXID": "SPDXRef-File-gcc-copyright",
             "fileName": "usr/share/doc/gcc-14-base/copyright",
@@ -210,7 +211,16 @@ class ComposeSbomTest(unittest.TestCase):
         })
 
         output = compose(document)
-        self.assertEqual([item["name"] for item in output["packages"]], ["extension-payload"])
+        package_names = {item["name"] for item in output["packages"]}
+        self.assertIn("libgomp1", package_names)
+        self.assertNotIn("gcc-14-base", package_names)
+        relationships = {
+            (rel["relationshipType"], rel["spdxElementId"], rel["relatedSpdxElement"])
+            for rel in output["relationships"]
+        }
+        file_id = output["files"][0]["SPDXID"]
+        self.assertIn(("CONTAINS", "SPDXRef-Package-libgomp1", file_id), relationships)
+        self.assertNotIn(("CONTAINS", "SPDXRef-Package-gcc", file_id), relationships)
 
     def test_registry_image_subject_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "image subject"):

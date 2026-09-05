@@ -37,21 +37,8 @@ def read_json(path: Path) -> dict[str, Any]:
     return value
 
 
-def predicate_from(document: dict[str, Any], path: Path) -> dict[str, Any]:
-    predicate = document.get("predicate")
-    if not isinstance(predicate, dict):
-        raise ValueError(f"{path}: expected a BuildKit attestation with an SPDX predicate")
-    return predicate
-
-
 def checksum_key(algorithm: str, value: str) -> tuple[str, str]:
     return algorithm.lower(), value.lower()
-
-
-def synthetic_package(package: dict[str, Any]) -> bool:
-    """Identify the scanner's document-root package, not a real dependency."""
-
-    return package.get("primaryPackagePurpose") == "FILE"
 
 
 def final_files(document: dict[str, Any], path: Path) -> list[dict[str, str]]:
@@ -92,23 +79,12 @@ def path_score(candidate: str, final_name: str) -> tuple[int, int]:
 
     candidate_parts = tuple(part for part in candidate.lstrip("/").split("/") if part)
     final_parts = tuple(part for part in final_name.lstrip("/").split("/") if part)
-    if candidate_parts == final_parts:
-        return 0, 0
-
     common_suffix = 0
     for candidate_part, final_part in zip(reversed(candidate_parts), reversed(final_parts)):
         if candidate_part != final_part:
             break
         common_suffix += 1
-    if common_suffix > 1:
-        return 1, -common_suffix
-    if common_suffix == 1:
-        return 2, 0
-    return 3, 0
-
-
-def is_license_path(name: str) -> bool:
-    return name.lstrip("/").startswith("licenses/")
+    return common_suffix, int(candidate_parts == final_parts)
 
 
 def file_id(name: str, algorithm: str, value: str) -> str:
@@ -148,7 +124,9 @@ def compose(builder_document: dict[str, Any], *,
             builder_path: Path = Path("builder")) -> dict[str, Any]:
     """Return a raw SPDX predicate composed from a builder attestation."""
 
-    builder = predicate_from(builder_document, builder_path)
+    builder = builder_document.get("predicate")
+    if not isinstance(builder, dict):
+        raise ValueError(f"{builder_path}: expected a BuildKit attestation with an SPDX predicate")
     if "subject" not in builder_document:
         raise ValueError(f"{builder_path}: builder attestation has no final-image subjects")
     final = final_files(builder_document, builder_path)
@@ -167,7 +145,7 @@ def compose(builder_document: dict[str, Any], *,
         for package in packages
         if isinstance(package, dict)
         and isinstance(package.get("SPDXID"), str)
-        and not synthetic_package(package)
+        and package.get("primaryPackagePurpose") != "FILE"
     }
 
     all_package_ids = {
@@ -176,6 +154,10 @@ def compose(builder_document: dict[str, Any], *,
         if isinstance(package, dict) and isinstance(package.get("SPDXID"), str)
     }
     package_ids = set(builder_packages)
+    package_ids_by_name: defaultdict[str, set[str]] = defaultdict(set)
+    for package_id, package in builder_packages.items():
+        if isinstance(package.get("name"), str):
+            package_ids_by_name[package["name"]].add(package_id)
     retained_package_ids: set[str] = set()
     owners_by_source_file: defaultdict[str, set[str]] = defaultdict(set)
     for relationship in relationships:
@@ -211,41 +193,45 @@ def compose(builder_document: dict[str, Any], *,
 
     composed_files: list[dict[str, Any]] = []
     source_to_final: defaultdict[str, set[str]] = defaultdict(set)
+    direct_final_owners: defaultdict[str, set[str]] = defaultdict(set)
     final_ids: set[str] = set()
+
+    def add_synthetic_file(record: dict[str, str], owner: str | None = None) -> None:
+        output_record = extension_file(record)
+        composed_files.append(output_record)
+        final_ids.add(output_record["SPDXID"])
+        if owner is not None:
+            retained_package_ids.add(owner)
+            direct_final_owners[output_record["SPDXID"]].add(owner)
+
     for final_record in final:
+        final_name = final_record["name"].lstrip("/")
+        license_parts = final_name.split("/", 2)
+        if license_parts[0] == "licenses" and len(license_parts) > 1:
+            owners = package_ids_by_name.get(license_parts[1], set())
+            add_synthetic_file(final_record, next(iter(owners)) if len(owners) == 1 else None)
+            continue
+
         candidates = by_checksum.get(
             checksum_key(final_record["algorithm"], final_record["value"]), []
         )
         if not candidates:
-            output_record = extension_file(final_record)
-            composed_files.append(output_record)
-            final_ids.add(output_record["SPDXID"])
+            add_synthetic_file(final_record)
             continue
 
-        # BuildKit can emit the same file twice: once at the final image path
-        # without package ownership and once at its builder path with a
-        # CONTAINS relationship. Prefer the owned copy so a copied system
-        # library is not incorrectly attributed to extension-payload.
         owned_candidates = [
             record for record in candidates if record["SPDXID"] in owned_source_file_ids
         ]
         candidates = owned_candidates or candidates
-        best_score = min(path_score(record["fileName"], final_record["name"]) for record in candidates)
+        best_score = max(path_score(record["fileName"], final_name) for record in candidates)
         selected = [
             record for record in candidates
-            if path_score(record["fileName"], final_record["name"]) == best_score
+            if path_score(record["fileName"], final_name) == best_score
         ]
         selected.sort(key=lambda record: record["SPDXID"])
         source_names = {record["fileName"].lstrip("/") for record in selected}
-        if len(source_names) > 1 or (
-            best_score[0] == 2 and is_license_path(final_record["name"])
-        ):
-            # Identical bytes do not prove that different source paths are the
-            # same file. License destinations also encode the package name, so
-            # a basename-only match to another source package is not evidence.
-            output_record = extension_file(final_record)
-            composed_files.append(output_record)
-            final_ids.add(output_record["SPDXID"])
+        if len(source_names) > 1:
+            add_synthetic_file(final_record)
             continue
 
         source = selected[0]
@@ -256,14 +242,9 @@ def compose(builder_document: dict[str, Any], *,
         composed_files.append(output_record)
         final_ids.add(new_id)
         for record in selected:
-            # Preserve all owners of this one source file, while excluding
-            # owners of other files that merely share its checksum.
             source_to_final[record["SPDXID"]].add(new_id)
 
-    # A final file can be the only evidence that a copied system library is
-    # part of the extension payload. Retain its package owner when present;
-    # otherwise attribute the file to the extension itself.
-    owned_final_ids: set[str] = set()
+    owned_final_ids: set[str] = set(direct_final_owners)
     for source_file_id, package_ids_for_file in owners_by_source_file.items():
         final_ids_for_source = source_to_final.get(source_file_id)
         if not final_ids_for_source:
@@ -273,9 +254,6 @@ def compose(builder_document: dict[str, Any], *,
 
     extension_file_ids = final_ids - owned_final_ids
 
-    # BuildKit uses DEPENDENCY_OF with the dependency as the subject and the
-    # dependent package as the related element. Handle the inverse SPDX form
-    # too, so the composer remains usable with other SPDX producers.
     dependencies: defaultdict[str, set[str]] = defaultdict(set)
     for relationship in relationships:
         if not isinstance(relationship, dict):
@@ -317,16 +295,11 @@ def compose(builder_document: dict[str, Any], *,
             (element_id in all_file_ids and element_id not in source_to_final)
             or (related_id in all_file_ids and related_id not in source_to_final)
         ):
-            # The builder relationship points at a file that was not copied
-            # into the final image. Do not leave a dangling file reference.
             continue
         if (
             (element_id in all_package_ids and element_id not in retained_package_ids)
             or (related_id in all_package_ids and related_id not in retained_package_ids)
         ):
-            # The relationship points at the scanner's synthetic root package
-            # or at a package that does not own a final-image file or provide a
-            # dependency of one. It is outside the composed SPDX document.
             continue
         if element_id not in source_to_final and related_id not in source_to_final:
             composed_relationships.append(copy.deepcopy(relationship))
@@ -343,6 +316,16 @@ def compose(builder_document: dict[str, Any], *,
                 if identity not in seen_relationships:
                     seen_relationships.add(identity)
                     composed_relationships.append(replacement)
+
+    composed_relationships.extend(
+        {
+            "spdxElementId": package_id,
+            "relationshipType": "CONTAINS",
+            "relatedSpdxElement": file_id_value,
+        }
+        for file_id_value, package_ids_for_file in direct_final_owners.items()
+        for package_id in sorted(package_ids_for_file)
+    )
 
     output = copy.deepcopy(builder)
     output["packages"] = [
