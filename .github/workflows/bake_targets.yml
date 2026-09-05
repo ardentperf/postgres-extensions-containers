@@ -161,6 +161,13 @@ jobs:
               sha256sum | awk '{print "sha256:" $1}')
             test -n "${image_index_digest}"
 
+            mapfile -t actions_attest_refs < <(
+              sed -n 's/^[[:space:]]*uses:[[:space:]]*\(actions\/attest@[0-9a-f]\{40\}\).*/\1/p' \
+                "${GITHUB_WORKSPACE}/.github/workflows/bake_targets.yml" | sort -u
+            )
+            test "${#actions_attest_refs[@]}" -eq 1
+            actions_attest_ref="${actions_attest_refs[0]}"
+
             provenance_manifest="${working_directory}/manifests/${bake_target}.json"
             predicate_directory="${working_directory}/predicates/${bake_target}"
             predicate="${predicate_directory}/extension-sbom.spdx.json"
@@ -193,7 +200,7 @@ jobs:
                 "buildx": "$(docker buildx version)",
                 "jq": "$(jq --version)",
                 "cosign": "$(cosign version 2>&1 | sed -n '1p')",
-                "actionsAttest": "actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6"
+                "actionsAttest": "${actions_attest_ref}"
               }
             },
             "workflow": {
@@ -209,10 +216,12 @@ jobs:
             jq -e . "${provenance_manifest}" > /dev/null
             jq -e --arg namespace "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1" \
               --arg index_digest "${image_index_digest}" \
+              --arg actions_attest_ref "${actions_attest_ref}" \
               '.schemaVersion == $namespace and
                (.inputs.builderSboms | length == 2) and
                (.image.platforms | length == 2) and
-               .image.indexDigest == $index_digest' \
+               .image.indexDigest == $index_digest and
+               .composer.toolVersions.actionsAttest == $actions_attest_ref' \
               "${provenance_manifest}"
 
             compose_args=(
@@ -311,6 +320,7 @@ jobs:
           path: extension-sboms
 
       - name: Attest aggregate SBOM
+        # If this pin changes, verify composer.toolVersions.actionsAttest in the SBOM manifest remains aligned.
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-name: ${{ matrix.sbom.testingSubject }}
@@ -499,6 +509,7 @@ jobs:
           path: extension-sboms
 
       - name: Attest production aggregate SBOM
+        # If this pin changes, verify composer.toolVersions.actionsAttest in the SBOM manifest remains aligned.
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-name: ${{ matrix.sbom.productionSubject }}
