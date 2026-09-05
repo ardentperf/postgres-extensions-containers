@@ -107,7 +107,6 @@ jobs:
             image=$(jq -r --arg target "${bake_target}" '.target[$target].tags[0]' "${bake_definition}")
             test -n "${image}" && test "${image}" != "null"
 
-            builder_sbom_paths=()
             builder_sbom_records=()
             composed_predicate_paths=()
             platform_manifest_records=()
@@ -147,10 +146,21 @@ jobs:
                 --output "${predicate}"
 
               test -s "${predicate}"
-              builder_sbom_paths+=("${builder_sbom}")
-              builder_sbom_records+=("$(jq -cn --arg platform "${platform}" --arg sha256 "$(sha256sum "${builder_sbom}" | awk '{print $1}')" '{platform: $platform, sha256: $sha256}')")
+              builder_sbom_records+=("$(cat <<EOF
+          {
+            "platform": "${platform}",
+            "sha256": "$(sha256sum "${builder_sbom}" | awk '{print $1}')"
+          }
+          EOF
+          )")
               composed_predicate_paths+=("${predicate}")
-              platform_manifest_records+=("$(jq -cn --arg platform "${platform}" --arg digest "${image_manifest_digest}" '{platform: $platform, manifestDigest: $digest}')")
+              platform_manifest_records+=("$(cat <<EOF
+          {
+            "platform": "${platform}",
+            "manifestDigest": "${image_manifest_digest}"
+          }
+          EOF
+          )")
               platforms+=("${platform}")
             done
 
@@ -181,13 +191,17 @@ jobs:
             "schemaVersion": "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1",
             "annotationDate": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "inputs": {
-              "builderSboms": $(printf '%s\n' "${builder_sbom_records[@]}" | jq -s -c .),
+              "builderSboms": [
+          $(IFS=,; printf '%s' "${builder_sbom_records[*]}")
+              ],
               "buildDefinition": {"sha256": "$(sha256sum "${bake_definition}" | awk '{print $1}')"}
             },
             "image": {
               "sourceCommit": "${GITHUB_SHA}",
               "target": "${bake_target}",
-              "platforms": $(printf '%s\n' "${platform_manifest_records[@]}" | jq -s -c .),
+              "platforms": [
+          $(IFS=,; printf '%s' "${platform_manifest_records[*]}")
+              ],
               "indexDigest": "${image_index_digest}"
             },
             "composer": {
@@ -262,6 +276,9 @@ jobs:
                 (.comment | startswith($namespace + " ")))' \
               "${predicate}"
 
+            if [[ -n "${attestation_records}" ]]; then
+              attestation_records+=$',\n'
+            fi
             attestation_records+="$(cat <<EOF
           {
             "target": "${bake_target}",
@@ -274,10 +291,14 @@ jobs:
           }
           EOF
           )"
-            attestation_records+=$'\n'
           done
 
-          jq -e -s . <<< "${attestation_records}" > "${working_directory}/attestation-manifest.json"
+          cat > "${working_directory}/attestation-manifest.json" <<EOF
+          [
+          ${attestation_records}
+          ]
+          EOF
+          jq -e . "${working_directory}/attestation-manifest.json" > /dev/null
           echo "manifest=$(jq -c . "${working_directory}/attestation-manifest.json")" >> "$GITHUB_OUTPUT"
 
       - name: Upload composed SBOMs
