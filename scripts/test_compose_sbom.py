@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
+import copy
+import hashlib
 import json
 import sys
+from tempfile import TemporaryDirectory
 import unittest
 from pathlib import Path
 
@@ -73,7 +76,141 @@ def builder_document(subjects):
     }
 
 
+def provenance_manifest():
+    return {
+        "schemaVersion": "cnpg.sbom-composition/v1",
+        "annotationDate": "2026-09-05T12:00:00Z",
+        "inputs": {
+            "builderSbom": {"sha256": "a" * 64},
+            "buildDefinition": {"sha256": "b" * 64},
+        },
+        "image": {
+            "sourceCommit": "c" * 40,
+            "target": "plr-1.0.0-18-bookworm",
+            "platform": "linux/amd64",
+            "manifestDigest": "sha256:" + "d" * 64,
+        },
+        "composer": {
+            "revision": "e" * 40,
+            "command": "./scripts/compose_sbom.py --builder-sbom builder.json",
+            "interpreter": "Python 3.13.0",
+            "toolVersions": {
+                "python": "Python 3.13.0",
+                "jq": "jq-1.7",
+            },
+        },
+        "workflow": {
+            "repository": "cnpg-extensions/postgres-extensions-containers",
+            "name": "Build, test and publish a target extension",
+            "ref": "refs/heads/main",
+            "runId": "12345",
+            "runAttempt": "1",
+            "actor": "octocat",
+        },
+    }
+
+
 class ComposeSbomTest(unittest.TestCase):
+    def test_provenance_annotation_has_canonical_document_level_structure(self):
+        manifest = provenance_manifest()
+        output = compose(
+            builder_document([
+                {"name": "lib/ext.so", "digest": {"sha256": "extension"}},
+            ]),
+            extension_name="plr",
+            provenance_manifest=manifest,
+        )
+
+        self.assertEqual(len(output["annotations"]), 1)
+        annotation = output["annotations"][0]
+        self.assertEqual(annotation["annotationDate"], manifest["annotationDate"])
+        self.assertEqual(annotation["annotationType"], "OTHER")
+        self.assertEqual(annotation["annotator"], "Tool: compose_sbom.py - 1.0")
+        self.assertEqual(annotation["spdxElementId"], "SPDXRef-DOCUMENT")
+
+        namespace, serialized = annotation["comment"].split(" ", 1)
+        self.assertEqual(namespace, "cnpg.sbom-composition/v1")
+        self.assertEqual(json.loads(serialized), manifest)
+        self.assertEqual(
+            serialized,
+            json.dumps(manifest, ensure_ascii=False, allow_nan=False,
+                       sort_keys=True, separators=(",", ":")),
+        )
+
+    def test_provenance_annotation_is_deterministic(self):
+        document = builder_document([
+            {"name": "lib/ext.so", "digest": {"sha256": "extension"}},
+        ])
+        manifest = provenance_manifest()
+
+        first = compose(copy.deepcopy(document), extension_name="plr",
+                        provenance_manifest=manifest)
+        second = compose(copy.deepcopy(document), extension_name="plr",
+                         provenance_manifest=manifest)
+
+        self.assertEqual(first, second)
+        self.assertEqual(
+            json.dumps(first, sort_keys=True, separators=(",", ":")),
+            json.dumps(second, sort_keys=True, separators=(",", ":")),
+        )
+
+    def test_provenance_manifest_builder_hash_is_checked_when_read_from_file(self):
+        document = builder_document([
+            {"name": "lib/ext.so", "digest": {"sha256": "extension"}},
+        ])
+        with TemporaryDirectory() as directory:
+            builder_path = Path(directory) / "builder.json"
+            manifest_path = Path(directory) / "provenance.json"
+            builder_path.write_text(json.dumps(document), encoding="utf-8")
+            manifest = provenance_manifest()
+            manifest["inputs"]["builderSbom"]["sha256"] = hashlib.sha256(
+                builder_path.read_bytes()
+            ).hexdigest()
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            output = compose(
+                document,
+                extension_name="plr",
+                builder_path=builder_path,
+                provenance_manifest=manifest_path,
+            )
+            self.assertIn("cnpg.sbom-composition/v1", output["annotations"][0]["comment"])
+
+            manifest["inputs"]["builderSbom"]["sha256"] = "0" * 64
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "builder SBOM hash"):
+                compose(
+                    document,
+                    extension_name="plr",
+                    builder_path=builder_path,
+                    provenance_manifest=manifest_path,
+                )
+
+    def test_missing_provenance_input_fails_closed(self):
+        for missing in ("inputs", "image", "composer", "workflow"):
+            with self.subTest(missing=missing):
+                manifest = provenance_manifest()
+                del manifest[missing]
+                with self.assertRaisesRegex(ValueError, "provenance manifest missing"):
+                    compose(
+                        builder_document([
+                            {"name": "lib/ext.so", "digest": {"sha256": "extension"}},
+                        ]),
+                        extension_name="plr",
+                        provenance_manifest=manifest,
+                    )
+
+        manifest = provenance_manifest()
+        del manifest["inputs"]["buildDefinition"]
+        with self.assertRaisesRegex(ValueError, "inputs.buildDefinition"):
+            compose(
+                builder_document([
+                    {"name": "lib/ext.so", "digest": {"sha256": "extension"}},
+                ]),
+                extension_name="plr",
+                provenance_manifest=manifest,
+            )
+
     def test_final_packages_are_retained_and_unshipped_packages_are_removed(self):
         output = compose(builder_document([
             {"name": "lib/ext.so", "digest": {"sha256": "extension"}},

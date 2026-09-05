@@ -6,18 +6,153 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from collections import defaultdict
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 
 EXTENSION_PACKAGE_ID = "SPDXRef-Package-extension-payload"
+COMPOSITION_NAMESPACE = "cnpg.sbom-composition/v1"
+COMPOSER_VERSION = "1.0"
+SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 
 def read_json(path: Path) -> dict[str, Any]:
     with path.open(encoding="utf-8") as stream:
         return json.load(stream)
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _required_string(value: Any, name: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"provenance manifest missing {name}")
+    return value
+
+
+def _required_mapping(value: Any, name: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError(f"provenance manifest missing {name}")
+    return value
+
+
+def validate_provenance_manifest(
+    manifest: dict[str, Any], *, builder_path: Path | None = None
+) -> None:
+    """Validate the generic manifest used for composition provenance.
+
+    The manifest is deliberately independent of any particular image builder.
+    Its required fields cover the inputs and identity needed to explain this
+    post-build composition step.  The builder hash is checked here when the
+    manifest came from the CLI, where the source file is available.
+    """
+
+    if not isinstance(manifest, dict):
+        raise ValueError("provenance manifest must contain a JSON object")
+    if manifest.get("schemaVersion") != COMPOSITION_NAMESPACE:
+        raise ValueError(
+            f"provenance manifest schemaVersion must be {COMPOSITION_NAMESPACE!r}"
+        )
+
+    annotation_date = _required_string(manifest.get("annotationDate"), "annotationDate")
+    timestamp_text = (
+        annotation_date[:-1] + "+00:00"
+        if annotation_date.endswith("Z")
+        else annotation_date
+    )
+    try:
+        parsed_date = datetime.fromisoformat(timestamp_text)
+    except ValueError as error:
+        raise ValueError(
+            "provenance manifest annotationDate must be an ISO-8601 timestamp"
+        ) from error
+    if parsed_date.tzinfo is None or parsed_date.utcoffset() != timedelta(0):
+        raise ValueError("provenance manifest annotationDate must be a UTC timestamp")
+
+    inputs = _required_mapping(manifest.get("inputs"), "inputs")
+    for input_name in ("builderSbom", "buildDefinition"):
+        input_record = _required_mapping(inputs.get(input_name), f"inputs.{input_name}")
+        digest = _required_string(input_record.get("sha256"), f"inputs.{input_name}.sha256")
+        if not SHA256_PATTERN.fullmatch(digest):
+            raise ValueError(
+                f"provenance manifest inputs.{input_name}.sha256 must be a SHA-256 hex digest"
+            )
+
+    image = _required_mapping(manifest.get("image"), "image")
+    for field in ("sourceCommit", "target", "platform", "manifestDigest"):
+        _required_string(image.get(field), f"image.{field}")
+
+    composer = _required_mapping(manifest.get("composer"), "composer")
+    for field in ("revision", "command", "interpreter"):
+        _required_string(composer.get(field), f"composer.{field}")
+    tool_versions = _required_mapping(composer.get("toolVersions"), "composer.toolVersions")
+    if not tool_versions or any(
+        not isinstance(name, str)
+        or not name
+        or not isinstance(version, str)
+        or not version
+        for name, version in tool_versions.items()
+    ):
+        raise ValueError("provenance manifest composer.toolVersions must contain tool versions")
+
+    workflow = _required_mapping(manifest.get("workflow"), "workflow")
+    for field in ("repository", "name", "ref", "runId", "runAttempt"):
+        _required_string(workflow.get(field), f"workflow.{field}")
+
+    if builder_path is not None:
+        if not builder_path.is_file():
+            raise ValueError(f"provenance builder SBOM is missing: {builder_path}")
+        actual_digest = sha256_file(builder_path)
+        expected_digest = manifest["inputs"]["builderSbom"]["sha256"]
+        if actual_digest != expected_digest:
+            raise ValueError(
+                "provenance manifest builder SBOM hash does not match "
+                f"{builder_path}"
+            )
+
+
+def _provenance_input(
+    provenance_manifest: dict[str, Any] | Path | str,
+) -> tuple[dict[str, Any], Path | None]:
+    if isinstance(provenance_manifest, (Path, str)):
+        path = Path(provenance_manifest)
+        return read_json(path), path
+    return provenance_manifest, None
+
+
+def provenance_annotation(
+    provenance_manifest: dict[str, Any] | Path | str, *, builder_path: Path
+) -> dict[str, Any]:
+    """Build the deterministic SPDX annotation for a composition manifest."""
+
+    manifest, manifest_path = _provenance_input(provenance_manifest)
+    validate_provenance_manifest(
+        manifest,
+        builder_path=builder_path if manifest_path is not None else None,
+    )
+    canonical_manifest = json.dumps(
+        manifest,
+        ensure_ascii=False,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return {
+        "annotationDate": manifest["annotationDate"],
+        "annotationType": "OTHER",
+        "annotator": f"Tool: compose_sbom.py - {COMPOSER_VERSION}",
+        "comment": f"{COMPOSITION_NAMESPACE} {canonical_manifest}",
+        "spdxElementId": "SPDXRef-DOCUMENT",
+    }
 
 
 def checksum_key(algorithm: str, value: str) -> tuple[str, str]:
@@ -92,7 +227,9 @@ def extension_file(final_record: dict[str, str]) -> dict[str, Any]:
 
 def compose(builder_document: dict[str, Any], *,
             extension_name: str,
-            builder_path: Path = Path("builder")) -> dict[str, Any]:
+            builder_path: Path = Path("builder"),
+            provenance_manifest: dict[str, Any] | Path | str | None = None,
+            ) -> dict[str, Any]:
     """Return a raw SPDX predicate composed from a builder attestation."""
 
     builder = builder_document["predicate"]
@@ -271,6 +408,27 @@ def compose(builder_document: dict[str, Any], *,
             }
             for file_id_value in sorted(extension_file_ids)
         )
+    if provenance_manifest is not None:
+        annotation = provenance_annotation(
+            provenance_manifest,
+            builder_path=builder_path,
+        )
+        annotations = output.get("annotations", [])
+        if not isinstance(annotations, list):
+            raise ValueError("SPDX annotations must be a list")
+        annotations = [
+            existing
+            for existing in annotations
+            if not (
+                isinstance(existing, dict)
+                and existing.get("spdxElementId") == "SPDXRef-DOCUMENT"
+                and existing.get("annotationType") == "OTHER"
+                and isinstance(existing.get("comment"), str)
+                and existing["comment"].startswith(f"{COMPOSITION_NAMESPACE} ")
+            )
+        ]
+        annotations.append(annotation)
+        output["annotations"] = annotations
     return output
 
 
@@ -281,12 +439,18 @@ def main() -> int:
     parser.add_argument("--builder-sbom", type=Path, required=True)
     parser.add_argument("--extension-name", required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--provenance-manifest",
+        type=Path,
+        help="JSON manifest to embed as a signed SPDX composition annotation",
+    )
     args = parser.parse_args()
 
     output = compose(
         read_json(args.builder_sbom),
         extension_name=args.extension_name,
         builder_path=args.builder_sbom,
+        provenance_manifest=args.provenance_manifest,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("w", encoding="utf-8") as stream:

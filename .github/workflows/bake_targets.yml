@@ -82,12 +82,21 @@ jobs:
           # supplies cached layers, and the final scratch stage is not scanned.
           export environment=testing
           export registry="${IMAGE_REGISTRY}"
+          export revision="${GITHUB_SHA}"
           working_directory="${RUNNER_TEMP}/extension-sbom"
-          mkdir -p "${working_directory}/predicates"
+          mkdir -p "${working_directory}/manifests" "${working_directory}/predicates"
           : > "${working_directory}/manifest.tsv"
           bake_files=(-f docker-bake.hcl -f "${EXTENSION_NAME}/metadata.hcl")
           bake_definition="${working_directory}/bake.json"
           docker buildx bake "${bake_files[@]}" --print > "${bake_definition}"
+          build_definition_sha256=$(sha256sum "${bake_definition}" | awk '{print $1}')
+          annotation_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          composer_revision=$(git rev-parse HEAD)
+          python_version=$(python3 --version 2>&1)
+          docker_version=$(docker --version)
+          buildx_version=$(docker buildx version)
+          jq_version=$(jq --version)
+          cosign_version=$(cosign version 2>&1 | sed -n '1p')
 
           # Inject the SBOM stage selector into a temporary Dockerfile.
           sed '1iARG BUILDKIT_SBOM_SCAN_STAGE=builder' "${EXTENSION_NAME}/Dockerfile" > "${EXTENSION_NAME}/.sbom.Dockerfile"
@@ -117,23 +126,104 @@ jobs:
               test -s "${builder_sbom}"
               jq -e '.predicateType == "https://spdx.dev/Document" and .predicate.name == "sbom-builder" and (.subject | length > 0)' "${builder_sbom}"
 
-              ./scripts/compose_sbom.py \
-                --builder-sbom "${builder_sbom}" \
-                --extension-name "${EXTENSION_NAME}" \
-                --output "${working_directory}/predicates/${bake_target}-${platform_name}/extension-sbom.spdx.json"
-
               architecture=${platform#*/}
-              digest=$(docker buildx imagetools inspect "${image}" --raw | \
+              image_manifest_digest=$(docker buildx imagetools inspect "${image}" --raw | \
                 jq -r --arg architecture "${architecture}" '
                   [.manifests[] |
                    select(.platform.os == "linux" and .platform.architecture == $architecture) |
                    .digest] | first // empty')
-              test -n "${digest}" && test "${digest}" != "null"
+              test -n "${image_manifest_digest}" && test "${image_manifest_digest}" != "null"
+
+              builder_sbom_sha256=$(sha256sum "${builder_sbom}" | awk '{print $1}')
+              predicate_directory="${working_directory}/predicates/${bake_target}-${platform_name}"
+              predicate="${predicate_directory}/extension-sbom.spdx.json"
+              provenance_manifest="${working_directory}/manifests/${bake_target}-${platform_name}.json"
+              mkdir -p "${predicate_directory}"
+              composer_command="./scripts/compose_sbom.py --builder-sbom ${builder_sbom} --extension-name ${EXTENSION_NAME} --provenance-manifest ${provenance_manifest} --output ${predicate}"
+              jq -n \
+                --arg annotation_date "${annotation_date}" \
+                --arg builder_sbom_sha256 "${builder_sbom_sha256}" \
+                --arg build_definition_sha256 "${build_definition_sha256}" \
+                --arg source_commit "${GITHUB_SHA}" \
+                --arg target "${bake_target}" \
+                --arg platform "${platform}" \
+                --arg image_manifest_digest "${image_manifest_digest}" \
+                --arg composer_revision "${composer_revision}" \
+                --arg composer_command "${composer_command}" \
+                --arg python_version "${python_version}" \
+                --arg docker_version "${docker_version}" \
+                --arg buildx_version "${buildx_version}" \
+                --arg jq_version "${jq_version}" \
+                --arg cosign_version "${cosign_version}" \
+                --arg repository "${GITHUB_REPOSITORY}" \
+                --arg workflow "${GITHUB_WORKFLOW}" \
+                --arg ref "${GITHUB_REF}" \
+                --arg run_id "${GITHUB_RUN_ID}" \
+                --arg run_attempt "${GITHUB_RUN_ATTEMPT}" \
+                --arg actor "${GITHUB_ACTOR}" \
+                '{
+                  schemaVersion: "cnpg.sbom-composition/v1",
+                  annotationDate: $annotation_date,
+                  inputs: {
+                    builderSbom: {sha256: $builder_sbom_sha256},
+                    buildDefinition: {sha256: $build_definition_sha256}
+                  },
+                  image: {
+                    sourceCommit: $source_commit,
+                    target: $target,
+                    platform: $platform,
+                    manifestDigest: $image_manifest_digest
+                  },
+                  composer: {
+                    revision: $composer_revision,
+                    command: $composer_command,
+                    interpreter: $python_version,
+                    toolVersions: {
+                      python: $python_version,
+                      docker: $docker_version,
+                      buildx: $buildx_version,
+                      jq: $jq_version,
+                      cosign: $cosign_version
+                    }
+                  },
+                  workflow: {
+                    repository: $repository,
+                    name: $workflow,
+                    ref: $ref,
+                    runId: $run_id,
+                    runAttempt: $run_attempt,
+                    actor: $actor
+                  }
+                }' > "${provenance_manifest}"
+              test -s "${provenance_manifest}"
+              jq -e --arg namespace "cnpg.sbom-composition/v1" \
+                --arg builder_sbom_sha256 "${builder_sbom_sha256}" \
+                --arg build_definition_sha256 "${build_definition_sha256}" \
+                '.schemaVersion == $namespace and
+                 .inputs.builderSbom.sha256 == $builder_sbom_sha256 and
+                 .inputs.buildDefinition.sha256 == $build_definition_sha256' \
+                "${provenance_manifest}"
+
+              ./scripts/compose_sbom.py \
+                --builder-sbom "${builder_sbom}" \
+                --extension-name "${EXTENSION_NAME}" \
+                --provenance-manifest "${provenance_manifest}" \
+                --output "${predicate}"
+
+              test -s "${predicate}"
+              jq -e --arg namespace "cnpg.sbom-composition/v1" '
+                .spdxVersion == "SPDX-2.3" and
+                .SPDXID == "SPDXRef-DOCUMENT" and
+                any((.annotations // [])[];
+                  .spdxElementId == "SPDXRef-DOCUMENT" and
+                  .annotationType == "OTHER" and
+                  (.comment | startswith($namespace + " ")))' \
+                "${predicate}"
 
               cosign attest --yes \
                 --type https://spdx.dev/Document \
-                --predicate "${working_directory}/predicates/${bake_target}-${platform_name}/extension-sbom.spdx.json" \
-                "${image}@${digest}"
+                --predicate "${predicate}" \
+                "${image}@${image_manifest_digest}"
 
               printf '%s\t%s\tpredicates/%s-%s/extension-sbom.spdx.json\n' \
                 "${image}" "${architecture}" "${bake_target}" "${platform_name}" \
@@ -148,6 +238,7 @@ jobs:
           if-no-files-found: error
           path: |
             ${{ runner.temp }}/extension-sbom/manifest.tsv
+            ${{ runner.temp }}/extension-sbom/manifests
             ${{ runner.temp }}/extension-sbom/predicates
 
       # Even if we're testing we sign the images, so we can push them to production later if that's required
@@ -303,6 +394,14 @@ jobs:
             production_image="${testing_image/-testing:/:}"
             predicate="extension-sboms/${predicate_path}"
             test -s "${predicate}"
+            jq -e --arg namespace "cnpg.sbom-composition/v1" '
+              .spdxVersion == "SPDX-2.3" and
+              .SPDXID == "SPDXRef-DOCUMENT" and
+              any((.annotations // [])[];
+                .spdxElementId == "SPDXRef-DOCUMENT" and
+                .annotationType == "OTHER" and
+                (.comment | startswith($namespace + " ")))' \
+              "${predicate}"
 
             digest=$(docker buildx imagetools inspect "${production_image}" --raw | \
               jq -r --arg architecture "${architecture}" '
