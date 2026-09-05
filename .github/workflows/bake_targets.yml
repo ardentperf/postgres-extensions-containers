@@ -241,13 +241,12 @@ jobs:
                 (.comment | startswith($namespace + " ")))' \
               "${predicate}"
 
-            production_image="${image/-testing:/:}"
             attestation_records+=("$(jq -cn \
               --arg target "${bake_target}" \
               --arg testing_image "${image}" \
-              --arg production_image "${production_image}" \
+              --arg production_image "${image/-testing:/:}" \
               --arg testing_subject "${image%:*}" \
-              --arg production_subject "${production_image%:*}" \
+              --arg production_subject "${image%%-testing:*}" \
               --arg index_digest "${image_index_digest}" \
               --arg predicate_path "predicates/${bake_target}/extension-sbom.spdx.json" \
               '{target: $target, testingImage: $testing_image, testingSubject: $testing_subject,
@@ -444,11 +443,9 @@ jobs:
 
           jq -e 'type == "array" and length > 0' extension-sboms/attestation-manifest.json > /dev/null
           while IFS= read -r record; do
-            production_image=$(jq -r '.productionImage' <<< "${record}")
-            index_digest=$(jq -r '.indexDigest' <<< "${record}")
             jq -e '.testingImage | type == "string" and length > 0' <<< "${record}" > /dev/null
-            test -n "${production_image}" && test "${production_image}" != "null"
-            test -n "${index_digest}" && test "${index_digest}" != "null"
+            jq -e '.productionImage | type == "string" and length > 0' <<< "${record}" > /dev/null
+            jq -e '.indexDigest | type == "string" and length > 0' <<< "${record}" > /dev/null
             predicate="extension-sboms/$(jq -r '.predicatePath' <<< "${record}")"
             test -s "${predicate}"
             jq -e --arg namespace "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1" '
@@ -460,8 +457,8 @@ jobs:
               (.comment | startswith($namespace + " ")))' \
               "${predicate}"
 
-            test "$(docker buildx imagetools inspect "${production_image}" --raw | \
-              sha256sum | awk '{print "sha256:" $1}')" = "${index_digest}"
+            test "$(docker buildx imagetools inspect "$(jq -r '.productionImage' <<< "${record}")" --raw | \
+              sha256sum | awk '{print "sha256:" $1}')" = "$(jq -r '.indexDigest' <<< "${record}")"
           done < <(jq -c '.[]' extension-sboms/attestation-manifest.json)
 
   attest-production-sboms:
