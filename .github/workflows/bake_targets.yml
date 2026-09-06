@@ -248,7 +248,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-      # Required by the cosign step in copy-images.
+      # Required by the cosign step
       id-token: write
     steps:
       - name: Copy to production
