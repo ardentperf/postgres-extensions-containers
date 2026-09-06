@@ -313,28 +313,26 @@ example, scan it with Trivy for vulnerabilities and license findings:
 trivy sbom --scanners vuln,license image-sbom.spdx.json
 ```
 
-### Retrieve and verify BuildKit image provenance
+### Retrieve BuildKit image provenance
 
-BuildKit's SLSA image provenance is kept as a separate, per-platform image
+BuildKit's image provenance is kept as a separate, per-platform image
 attestation. Retrieve a platform's provenance with `buildx`:
 
 ```bash
 docker buildx imagetools inspect "<IMAGE>@<INDEX_DIGEST>" \
-  --format '{{ json (index .Provenance "linux/amd64").SLSA }}' \
+  --format '{{ json (index .Provenance "linux/amd64") }}' \
   > buildkit-provenance-linux-amd64.json
 
 docker buildx imagetools inspect "<IMAGE>@<INDEX_DIGEST>" \
-  --format '{{ json (index .Provenance "linux/arm64").SLSA }}' \
+  --format '{{ json (index .Provenance "linux/arm64") }}' \
   > buildkit-provenance-linux-arm64.json
 ```
 
 The Cosign verification above cryptographically verifies the immutable image
-index that contains the BuildKit attestation. The retrieved predicates can then
-be inspected or evaluated with a policy tool that supports BuildKit's SLSA
-format. `slsa-verifier` is not suitable here: its current implementation
-supports SLSA Generator and Google Cloud Build provenance, not BuildKit.
-See the [BuildKit provenance documentation](https://docs.docker.com/build/metadata/attestations/slsa-provenance/)
-for the predicate format.
+index that contains the BuildKit attestation. The retrieved provenance can then
+be inspected with standard JSON tools. See the [BuildKit attestations
+documentation](https://docs.docker.com/build/metadata/attestations/) for the
+format.
 
 The BuildKit and GitHub SBOM attestations intentionally answer different
 questions: the BuildKit attestation describes the build, while the GitHub SBOM
