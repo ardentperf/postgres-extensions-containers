@@ -110,8 +110,8 @@ jobs:
             builder_sbom_records=()
             composed_predicate_paths=()
             platform_manifest_records=()
-            platforms=()
-            for platform in linux/amd64 linux/arm64; do
+            platforms=(linux/amd64 linux/arm64)
+            for platform in "${platforms[@]}"; do
               platform_name=${platform//\//-}
               output_directory="${working_directory}/${bake_target}-${platform_name}"
               mkdir -p "${output_directory}"
@@ -149,7 +149,6 @@ jobs:
               builder_sbom_records+=("{\"platform\":\"${platform}\",\"sha256\":\"$(sha256sum "${builder_sbom}" | awk '{print $1}')\"}")
               composed_predicate_paths+=("${predicate}")
               platform_manifest_records+=("{\"platform\":\"${platform}\",\"manifestDigest\":\"${image_manifest_digest}\"}")
-              platforms+=("${platform}")
             done
 
             # The raw index bytes are the subject digest for the aggregate
