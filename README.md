@@ -275,6 +275,26 @@ scanners such as Trivy select the Debian advisory database without access to
 the image filesystem. The OS package is compatibility metadata and remains
 provisional with the rest of this beta SBOM implementation.
 
+### Run the SBOM build locally with act
+
+The reusable `testbuild` job supports local execution with `act`. This assumes
+an OCI registry is available at `127.0.0.1:5000`; the local mode skips GHCR
+login and image signing while retaining the real multi-platform Buildx and
+SBOM composition steps. The artifact server keeps the generated SBOM files
+available after the job completes:
+
+```bash
+artifact_dir="$(mktemp -d)"
+act -W .github/workflows/bake_targets.yml -j testbuild \
+  --input extension_name=plr \
+  --input local=true \
+  -P ubuntu-24.04=catthehacker/ubuntu:act-latest \
+  --container-daemon-socket /var/run/docker.sock \
+  --artifact-server-path "$artifact_dir" \
+  --artifact-server-port 34568 \
+  --container-options '--privileged'
+```
+
 ## Container authenticity and provenance
 
 The workflow follows the verification pattern described in CloudNativePG's
