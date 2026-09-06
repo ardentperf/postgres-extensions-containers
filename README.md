@@ -345,6 +345,10 @@ example, scan it with Trivy for vulnerabilities and license findings:
 trivy sbom --scanners vuln,license image-sbom.spdx.json
 ```
 
+For complete human-readable examples of retrieving the signed SBOM from GHCR
+and scanning it with Trivy, including the exact commands and full output, see
+[Trivy SBOM scan examples](examples/trivy-sbom-examples.txt).
+
 ### Retrieve BuildKit image provenance
 
 BuildKit's image provenance is kept as a separate, per-platform image
