@@ -339,6 +339,7 @@ class ComposeSbomTest(unittest.TestCase):
             "licenses/r-base-core/copyright",
             ("GPL-2.0-only AND LicenseRef-scancode-pcre",),
         ))
+        document["predicate"]["packages"][-1]["licenseDeclared"] = "MIT"
         report["license_references"] = [{
             "spdx_license_key": "LicenseRef-scancode-pcre",
             "name": "PCRE License",
@@ -355,11 +356,35 @@ class ComposeSbomTest(unittest.TestCase):
             ["GPL-2.0-only AND LicenseRef-scancode-pcre"],
         )
         self.assertEqual(package_record["licenseInfoFromFiles"], file_record["licenseInfoInFiles"])
-        self.assertEqual(package_record["licenseDeclared"], "NOASSERTION")
+        self.assertEqual(
+            package_record["licenseDeclared"],
+            "MIT AND (GPL-2.0-only AND LicenseRef-scancode-pcre)",
+        )
         self.assertEqual(package_record["licenseConcluded"], "NOASSERTION")
         self.assertIn(
             {"extractedText": "PCRE license text", "licenseId": "LicenseRef-scancode-pcre", "name": "PCRE License"},
             output["hasExtractedLicensingInfos"],
+        )
+
+    def test_scancode_licenses_populate_trivy_package_field(self):
+        document = builder_document([
+            {"name": "licenses/libgomp1/copyright", "digest": {"sha256": "copyright"}},
+        ])
+        document["predicate"]["packages"].append(
+            package("SPDXRef-Package-libgomp1", "libgomp1", "1", "pkg:generic/libgomp1@1")
+        )
+        report = scan_report((
+            "licenses/libgomp1/copyright",
+            ("GPL-2.0-only", "BSD-3-Clause"),
+        ))
+
+        _, output, _ = run_composer([document] * 2, scan_reports=[report] * 2)
+        package_record = next(
+            item for item in output["packages"] if item["name"] == "libgomp1"
+        )
+        self.assertEqual(
+            package_record["licenseDeclared"],
+            "BSD-3-Clause AND GPL-2.0-only",
         )
 
     def test_registry_image_subject_is_rejected(self):

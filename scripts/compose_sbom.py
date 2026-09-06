@@ -16,6 +16,7 @@ from typing import Any, Sequence
 
 EXTENSION_PACKAGE_ID = "SPDXRef-Package-extension-payload"
 LICENSE_REF = re.compile(r"LicenseRef-[A-Za-z0-9][A-Za-z0-9.-]*")
+LICENSE_OPERATOR = re.compile(r"\s+(?:AND|OR|WITH)\s+")
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -316,6 +317,19 @@ def compose(builder_document: dict[str, Any], *,
                 .union(licenses)
                 - {"NONE", "NOASSERTION"}
             )
+    for package in output["packages"]:
+        file_licenses = set(package.get("licenseInfoFromFiles", [])) - {"NONE", "NOASSERTION"}
+        if not file_licenses:
+            continue
+        declared = package.get("licenseDeclared")
+        terms = []
+        if declared not in {None, "NONE", "NOASSERTION"}:
+            terms.append(declared)
+        terms.extend(sorted(file_licenses - set(terms)))
+        package["licenseDeclared"] = " AND ".join(
+            f"({term})" if LICENSE_OPERATOR.search(term) else term
+            for term in terms
+        )
     extracted = {
         item["licenseId"]: item
         for item in output.get("hasExtractedLicensingInfos", [])
