@@ -156,13 +156,12 @@ jobs:
             provenance_manifest="${working_directory}/manifests/${bake_target}.json"
             predicate="${working_directory}/predicates/${bake_target}/extension-sbom.spdx.json"
             mkdir -p "${predicate%/*}"
-            composer_command="./scripts/compose_sbom.py --extension-name ${EXTENSION_NAME} --output ${predicate}"
             compose_args=(
+              ./scripts/compose_sbom.py
               --extension-name "${EXTENSION_NAME}"
               --output "${predicate}"
             )
             for index in "${!platforms[@]}"; do
-              composer_command+=" --builder-sbom <${platforms[$index]}> --platform ${platforms[$index]}"
               compose_args+=(
                 --builder-sbom "${builder_sbom_paths[$index]}"
                 --platform "${platforms[$index]}"
@@ -184,7 +183,7 @@ jobs:
             },
             "composer": {
               "revision": "$(git rev-parse HEAD)",
-              "command": "${composer_command}",
+              "command": "$(printf '%q ' "${compose_args[@]}")",
               "interpreter": "$(python3 --version 2>&1)",
               "toolVersions": {
                 "python": "$(python3 --version 2>&1)",
@@ -216,7 +215,7 @@ jobs:
                .composer.toolVersions.actionsAttest == $actions_attest_ref' \
               "${provenance_manifest}"
 
-            ./scripts/compose_sbom.py "${compose_args[@]}"
+            "${compose_args[@]}"
 
             jq -e \
               --arg namespace "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1" \
