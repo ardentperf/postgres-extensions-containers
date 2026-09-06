@@ -90,7 +90,6 @@ jobs:
           export revision="${GITHUB_SHA}"
           working_directory="${RUNNER_TEMP}/extension-sbom"
           mkdir -p "${working_directory}/manifests" \
-            "${working_directory}/platform-predicates" \
             "${working_directory}/predicates"
           bake_files=(-f docker-bake.hcl -f "${EXTENSION_NAME}/metadata.hcl")
           bake_definition="${working_directory}/bake.json"
@@ -108,12 +107,11 @@ jobs:
             test -n "${image}" && test "${image}" != "null"
 
             builder_sbom_records=()
-            composed_predicate_paths=()
+            builder_sbom_paths=()
             platform_manifest_records=()
             platforms=(linux/amd64 linux/arm64)
             for platform in "${platforms[@]}"; do
-              platform_name=${platform//\//-}
-              output_directory="${working_directory}/${bake_target}-${platform_name}"
+              output_directory="${working_directory}/${bake_target}-${platform//\//-}"
               mkdir -p "${output_directory}"
 
               # BuildKit reuses the pushed build's cached layers; this adds only
@@ -136,18 +134,8 @@ jobs:
                    .digest] | first // empty')
               test -n "${image_manifest_digest}" && test "${image_manifest_digest}" != "null"
 
-              predicate_directory="${working_directory}/platform-predicates/${bake_target}-${platform_name}"
-              predicate="${predicate_directory}/extension-sbom.spdx.json"
-              mkdir -p "${predicate_directory}"
-
-              ./scripts/compose_sbom.py \
-                --builder-sbom "${builder_sbom}" \
-                --extension-name "${EXTENSION_NAME}" \
-                --output "${predicate}"
-
-              test -s "${predicate}"
+              builder_sbom_paths+=("${builder_sbom}")
               builder_sbom_records+=("{\"platform\":\"${platform}\",\"sha256\":\"$(sha256sum "${builder_sbom}" | awk '{print $1}')\"}")
-              composed_predicate_paths+=("${predicate}")
               platform_manifest_records+=("{\"platform\":\"${platform}\",\"manifestDigest\":\"${image_manifest_digest}\"}")
             done
 
@@ -166,12 +154,19 @@ jobs:
             actions_attest_ref="${actions_attest_refs[0]}"
 
             provenance_manifest="${working_directory}/manifests/${bake_target}.json"
-            predicate_directory="${working_directory}/predicates/${bake_target}"
-            predicate="${predicate_directory}/extension-sbom.spdx.json"
-            mkdir -p "${predicate_directory}"
+            predicate="${working_directory}/predicates/${bake_target}/extension-sbom.spdx.json"
+            mkdir -p "${predicate%/*}"
             composer_command="./scripts/compose_sbom.py --extension-name ${EXTENSION_NAME} --output ${predicate}"
-            for platform in "${platforms[@]}"; do
-              composer_command+=" --aggregate-from <${platform}> --platform ${platform}"
+            compose_args=(
+              --extension-name "${EXTENSION_NAME}"
+              --output "${predicate}"
+            )
+            for index in "${!platforms[@]}"; do
+              composer_command+=" --builder-sbom <${platforms[$index]}> --platform ${platforms[$index]}"
+              compose_args+=(
+                --builder-sbom "${builder_sbom_paths[$index]}"
+                --platform "${platforms[$index]}"
+              )
             done
             cat > "${provenance_manifest}" <<EOF
           {
@@ -221,16 +216,6 @@ jobs:
                .composer.toolVersions.actionsAttest == $actions_attest_ref' \
               "${provenance_manifest}"
 
-            compose_args=(
-              --extension-name "${EXTENSION_NAME}"
-              --output "${predicate}"
-            )
-            for index in "${!platforms[@]}"; do
-              compose_args+=(
-                --aggregate-from "${composed_predicate_paths[$index]}"
-                --platform "${platforms[$index]}"
-              )
-            done
             ./scripts/compose_sbom.py "${compose_args[@]}"
 
             jq -e \

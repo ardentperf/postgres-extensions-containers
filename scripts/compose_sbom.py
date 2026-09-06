@@ -374,44 +374,35 @@ def main() -> int:
         "--builder-sbom",
         type=Path,
         action="append",
-        help="Builder-stage SBOM, repeat once per aggregate platform",
-    )
-    parser.add_argument(
-        "--aggregate-from",
-        type=Path,
-        action="append",
-        help="Composed SPDX document to include in a multi-platform aggregate",
+        required=True,
+        help="Builder-stage SBOM, repeat once per platform",
     )
     parser.add_argument(
         "--platform",
         action="append",
-        help="Platform corresponding to each --aggregate-from input",
+        required=True,
+        help="Platform corresponding to each --builder-sbom input",
     )
     parser.add_argument("--extension-name", required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 
-    builder_sboms = args.builder_sbom or []
-    aggregate_inputs = args.aggregate_from or []
-    platforms = args.platform or []
-    if aggregate_inputs:
-        if len(aggregate_inputs) != len(platforms):
-            parser.error("--aggregate-from and --platform must have the same number of values")
-        output = aggregate(
-            [
-                (platform, read_json(path))
-                for platform, path in zip(platforms, aggregate_inputs)
-            ],
-            extension_name=args.extension_name,
-        )
-    else:
-        if len(builder_sboms) != 1:
-            parser.error("single-document mode requires exactly one --builder-sbom")
-        output = compose(
-            read_json(builder_sboms[0]),
-            extension_name=args.extension_name,
-            builder_path=builder_sboms[0],
-        )
+    if len(args.builder_sbom) != len(args.platform):
+        parser.error("--builder-sbom and --platform must have the same number of values")
+    output = aggregate(
+        [
+            (
+                platform,
+                compose(
+                    read_json(path),
+                    extension_name=args.extension_name,
+                    builder_path=path,
+                ),
+            )
+            for path, platform in zip(args.builder_sbom, args.platform)
+        ],
+        extension_name=args.extension_name,
+    )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("w", encoding="utf-8") as stream:
         json.dump(output, stream, indent=2)
