@@ -1,3 +1,66 @@
+$ gh attestation verify 'oci://ghcr.io/cnpg-extensions/pgagent-testing@sha256:141d4af0a51af92f326944f00487f84d526bfb6d667eff5c87799e1643aaf805' --repo cnpg-extensions/postgres-extensions-containers --bundle-from-oci --predicate-type https://spdx.dev/Document/v2.3 --format json --jq '.[].verificationResult.statement.predicate' > pgagent-bookworm.spdx.json
+$ trivy sbom --scanners vuln,license --no-progress --skip-version-check pgagent-bookworm.spdx.json
+2026-09-06T17:29:40Z	INFO	[vuln] Vulnerability scanning is enabled
+2026-09-06T17:29:40Z	INFO	[license] License scanning is enabled
+2026-09-06T17:29:40Z	INFO	Detected SBOM format	format="spdx-json"
+2026-09-06T17:29:40Z	INFO	Detected OS	family="debian" version="12.15"
+2026-09-06T17:29:40Z	INFO	[debian] Detecting vulnerabilities...	os_version="12" pkg_num=3
+2026-09-06T17:29:40Z	INFO	Number of language-specific files	num=0
+
+Report Summary
+
+┌───────────────────────────────────────────┬────────┬─────────────────┬──────────┐
+│                  Target                   │  Type  │ Vulnerabilities │ Licenses │
+├───────────────────────────────────────────┼────────┼─────────────────┼──────────┤
+│ pgagent-bookworm.spdx.json (debian 12.15) │ debian │        1        │    -     │
+├───────────────────────────────────────────┼────────┼─────────────────┼──────────┤
+│ OS Packages                               │   -    │        -        │    3     │
+└───────────────────────────────────────────┴────────┴─────────────────┴──────────┘
+Legend:
+- '-': Not scanned
+- '0': Clean (no security findings detected)
+
+
+pgagent-bookworm.spdx.json (debian 12.15)
+=========================================
+Total: 1 (UNKNOWN: 0, LOW: 0, MEDIUM: 0, HIGH: 1, CRITICAL: 0)
+
+┌─────────┬───────────────┬──────────┬──────────┬───────────────────┬───────────────┬──────────────────────────────────────────────────────────────┐
+│ Library │ Vulnerability │ Severity │  Status  │ Installed Version │ Fixed Version │                            Title                             │
+├─────────┼───────────────┼──────────┼──────────┼───────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
+│ pgagent │ CVE-2025-0218 │ HIGH     │ affected │ 4.2.3-5.pgdg12+1  │               │ When batch jobs are executed by pgAgent, a script is created │
+│         │               │          │          │                   │               │ in...                                                        │
+│         │               │          │          │                   │               │ https://avd.aquasec.com/nvd/cve-2025-0218                    │
+└─────────┴───────────────┴──────────┴──────────┴───────────────────┴───────────────┴──────────────────────────────────────────────────────────────┘
+
+OS Packages (license)
+=====================
+Total: 3 (UNKNOWN: 3, LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0)
+
+┌───────────────────────────┬──────────────────────────────────────────────────────────────┬────────────────┬──────────┐
+│          Package          │                           License                            │ Classification │ Severity │
+├───────────────────────────┼──────────────────────────────────────────────────────────────┼────────────────┼──────────┤
+│ libboost-filesystem1.74.0 │ Apache-2.0 AND LicenseRef-BSD2 AND LicenseRef-BSD3-DEShaw    │ unknown        │ UNKNOWN  │
+│                           │ AND LicenseRef-BSD3-Google AND BSL-1.0 AND                   │                │          │
+│                           │ LicenseRef-Caramel AND LicenseRef-CrystalClear AND           │                │          │
+│                           │ LicenseRef-HP AND Jam AND LicenseRef-Kempf AND MIT AND       │                │          │
+│                           │ LicenseRef-NIST AND LicenseRef-OldBoost1 AND                 │                │          │
+│                           │ LicenseRef-OldBoost2 AND LicenseRef-OldBoost3 AND            │                │          │
+│                           │ LicenseRef-Python AND LicenseRef-SGI AND LicenseRef-Spencer  │                │          │
+│                           │ AND Zlib                                                     │                │          │
+├───────────────────────────┤                                                              │                │          │
+│ libboost-thread1.74.0     │                                                              │                │          │
+│                           │                                                              │                │          │
+│                           │                                                              │                │          │
+│                           │                                                              │                │          │
+│                           │                                                              │                │          │
+│                           │                                                              │                │          │
+│                           │                                                              │                │          │
+│                           │                                                              │                │          │
+├───────────────────────────┼──────────────────────────────────────────────────────────────┤                │          │
+│ pgagent                   │ LicenseRef-scancode-unknown-license-reference AND PostgreSQL │                │          │
+└───────────────────────────┴──────────────────────────────────────────────────────────────┴────────────────┴──────────┘
+
 $ gh attestation verify 'oci://ghcr.io/cnpg-extensions/mobilitydb-testing@sha256:ab54a22a15959dcc253efd28d3fb0932097460ee72a01b1ba45a6f1e4ed4f493' --repo cnpg-extensions/postgres-extensions-containers --bundle-from-oci --predicate-type https://spdx.dev/Document/v2.3 --format json --jq '.[].verificationResult.statement.predicate' > mobilitydb-trixie.spdx.json
 $ trivy sbom --scanners vuln,license --no-progress --skip-version-check mobilitydb-trixie.spdx.json
 2026-09-06T17:29:39Z	INFO	[vuln] Vulnerability scanning is enabled
@@ -100,66 +163,3 @@ Total: 24 (UNKNOWN: 19, LOW: 4, MEDIUM: 0, HIGH: 1, CRITICAL: 0)
 │                          │ GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND       │                │          │
 │                          │ GPL-3.0-or-later AND PostgreSQL AND LicenseRef-public-domain │                │          │
 └──────────────────────────┴──────────────────────────────────────────────────────────────┴────────────────┴──────────┘
-
-$ gh attestation verify 'oci://ghcr.io/cnpg-extensions/pgagent-testing@sha256:141d4af0a51af92f326944f00487f84d526bfb6d667eff5c87799e1643aaf805' --repo cnpg-extensions/postgres-extensions-containers --bundle-from-oci --predicate-type https://spdx.dev/Document/v2.3 --format json --jq '.[].verificationResult.statement.predicate' > pgagent-bookworm.spdx.json
-$ trivy sbom --scanners vuln,license --no-progress --skip-version-check pgagent-bookworm.spdx.json
-2026-09-06T17:29:40Z	INFO	[vuln] Vulnerability scanning is enabled
-2026-09-06T17:29:40Z	INFO	[license] License scanning is enabled
-2026-09-06T17:29:40Z	INFO	Detected SBOM format	format="spdx-json"
-2026-09-06T17:29:40Z	INFO	Detected OS	family="debian" version="12.15"
-2026-09-06T17:29:40Z	INFO	[debian] Detecting vulnerabilities...	os_version="12" pkg_num=3
-2026-09-06T17:29:40Z	INFO	Number of language-specific files	num=0
-
-Report Summary
-
-┌───────────────────────────────────────────┬────────┬─────────────────┬──────────┐
-│                  Target                   │  Type  │ Vulnerabilities │ Licenses │
-├───────────────────────────────────────────┼────────┼─────────────────┼──────────┤
-│ pgagent-bookworm.spdx.json (debian 12.15) │ debian │        1        │    -     │
-├───────────────────────────────────────────┼────────┼─────────────────┼──────────┤
-│ OS Packages                               │   -    │        -        │    3     │
-└───────────────────────────────────────────┴────────┴─────────────────┴──────────┘
-Legend:
-- '-': Not scanned
-- '0': Clean (no security findings detected)
-
-
-pgagent-bookworm.spdx.json (debian 12.15)
-=========================================
-Total: 1 (UNKNOWN: 0, LOW: 0, MEDIUM: 0, HIGH: 1, CRITICAL: 0)
-
-┌─────────┬───────────────┬──────────┬──────────┬───────────────────┬───────────────┬──────────────────────────────────────────────────────────────┐
-│ Library │ Vulnerability │ Severity │  Status  │ Installed Version │ Fixed Version │                            Title                             │
-├─────────┼───────────────┼──────────┼──────────┼───────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ pgagent │ CVE-2025-0218 │ HIGH     │ affected │ 4.2.3-5.pgdg12+1  │               │ When batch jobs are executed by pgAgent, a script is created │
-│         │               │          │          │                   │               │ in...                                                        │
-│         │               │          │          │                   │               │ https://avd.aquasec.com/nvd/cve-2025-0218                    │
-└─────────┴───────────────┴──────────┴──────────┴───────────────────┴───────────────┴──────────────────────────────────────────────────────────────┘
-
-OS Packages (license)
-=====================
-Total: 3 (UNKNOWN: 3, LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0)
-
-┌───────────────────────────┬──────────────────────────────────────────────────────────────┬────────────────┬──────────┐
-│          Package          │                           License                            │ Classification │ Severity │
-├───────────────────────────┼──────────────────────────────────────────────────────────────┼────────────────┼──────────┤
-│ libboost-filesystem1.74.0 │ Apache-2.0 AND LicenseRef-BSD2 AND LicenseRef-BSD3-DEShaw    │ unknown        │ UNKNOWN  │
-│                           │ AND LicenseRef-BSD3-Google AND BSL-1.0 AND                   │                │          │
-│                           │ LicenseRef-Caramel AND LicenseRef-CrystalClear AND           │                │          │
-│                           │ LicenseRef-HP AND Jam AND LicenseRef-Kempf AND MIT AND       │                │          │
-│                           │ LicenseRef-NIST AND LicenseRef-OldBoost1 AND                 │                │          │
-│                           │ LicenseRef-OldBoost2 AND LicenseRef-OldBoost3 AND            │                │          │
-│                           │ LicenseRef-Python AND LicenseRef-SGI AND LicenseRef-Spencer  │                │          │
-│                           │ AND Zlib                                                     │                │          │
-├───────────────────────────┤                                                              │                │          │
-│ libboost-thread1.74.0     │                                                              │                │          │
-│                           │                                                              │                │          │
-│                           │                                                              │                │          │
-│                           │                                                              │                │          │
-│                           │                                                              │                │          │
-│                           │                                                              │                │          │
-│                           │                                                              │                │          │
-│                           │                                                              │                │          │
-├───────────────────────────┼──────────────────────────────────────────────────────────────┤                │          │
-│ pgagent                   │ LicenseRef-scancode-unknown-license-reference AND PostgreSQL │                │          │
-└───────────────────────────┴──────────────────────────────────────────────────────────────┴────────────────┴──────────┘
