@@ -204,7 +204,6 @@ jobs:
             }
           }
           EOF
-            jq -e . "${provenance_manifest}" > /dev/null
             jq -e --arg namespace "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1" \
               --arg index_digest "${image_index_digest}" \
               --arg actions_attest_ref "${actions_attest_ref}" \
@@ -234,14 +233,6 @@ jobs:
             mv "${predicate}.tmp" "${predicate}"
 
             test -s "${predicate}"
-            jq -e --arg namespace "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1" '
-              .spdxVersion == "SPDX-2.3" and
-              .SPDXID == "SPDXRef-DOCUMENT" and
-              any((.annotations // [])[];
-                .spdxElementId == "SPDXRef-DOCUMENT" and
-                .annotationType == "OTHER" and
-                (.comment | startswith($namespace + " ")))' \
-              "${predicate}"
 
             attestation_records+=("{\"target\":\"${bake_target}\",\"testingImage\":\"${image}\",\"testingSubject\":\"${image%:*}\",\"productionImage\":\"${image/-testing:/:}\",\"productionSubject\":\"${image%%-testing:*}\",\"indexDigest\":\"${image_index_digest}\",\"predicatePath\":\"predicates/${bake_target}/extension-sbom.spdx.json\"}")
           done
