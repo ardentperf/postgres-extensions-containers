@@ -269,6 +269,12 @@ PostgreSQL packages visible. BuildKit's image provenance remains a separate
 attestation because it describes how the image was built rather than what the
 image contains.
 
+Each final SPDX document also includes a synthetic Debian OS package derived
+from the Debian distro qualifiers in the builder SBOM. This lets SBOM-only
+scanners such as Trivy select the Debian advisory database without access to
+the image filesystem. The OS package is compatibility metadata and remains
+provisional with the rest of this beta SBOM implementation.
+
 ## Container authenticity and provenance
 
 The workflow follows the verification pattern described in CloudNativePG's

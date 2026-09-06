@@ -12,6 +12,7 @@ from collections import defaultdict
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Sequence
+from urllib.parse import parse_qs, urlsplit
 
 
 EXTENSION_PACKAGE_ID = "SPDXRef-Package-extension-payload"
@@ -103,6 +104,30 @@ def scancode_licenses(
             "name": license_id,
         })
     return licenses_by_file, references
+
+
+def debian_os_package(packages: list[dict[str, Any]], path: Path) -> dict[str, Any]:
+    distros = {
+        distro
+        for package in packages
+        for reference in package.get("externalRefs", [])
+        if reference.get("referenceType") == "purl"
+        for distro in parse_qs(urlsplit(reference["referenceLocator"]).query).get("distro", [])
+    }
+    if len(distros) != 1 or not next(iter(distros), "").startswith("debian-"):
+        raise ValueError(f"{path}: packages must identify one Debian distro")
+    version = next(iter(distros)).removeprefix("debian-")
+    return {
+        "SPDXID": f"SPDXRef-OperatingSystem-debian-{version}",
+        "copyrightText": "NOASSERTION",
+        "downloadLocation": "NONE",
+        "filesAnalyzed": False,
+        "licenseConcluded": "NOASSERTION",
+        "licenseDeclared": "NOASSERTION",
+        "name": "debian",
+        "primaryPackagePurpose": "OPERATING-SYSTEM",
+        "versionInfo": version,
+    }
 
 
 def compose(builder_document: dict[str, Any], *,
@@ -276,6 +301,7 @@ def compose(builder_document: dict[str, Any], *,
     )
 
     output = deepcopy(builder)
+    os_package = debian_os_package(packages, builder_path)
     output["packages"] = [
         deepcopy(package) for package in packages
         if package["SPDXID"] in retained_package_ids
@@ -292,6 +318,7 @@ def compose(builder_document: dict[str, Any], *,
             "supplier": "NOASSERTION",
             "versionInfo": "NOASSERTION",
         })
+    output["packages"].append(os_package)
     output["files"] = composed_files
     output["relationships"] = composed_relationships
     package_by_id = {package["SPDXID"]: package for package in output["packages"]}
@@ -358,6 +385,25 @@ def compose(builder_document: dict[str, Any], *,
             }
             for file_id_value in sorted(extension_file_ids)
         )
+    output["relationships"].append({
+        "spdxElementId": output["SPDXID"],
+        "relationshipType": "DESCRIBES",
+        "relatedSpdxElement": os_package["SPDXID"],
+    })
+    output["relationships"].extend(
+        {
+            "spdxElementId": os_package["SPDXID"],
+            "relationshipType": "CONTAINS",
+            "relatedSpdxElement": package["SPDXID"],
+        }
+        for package in output["packages"]
+        if package["SPDXID"] != os_package["SPDXID"]
+        and any(
+            reference.get("referenceType") == "purl"
+            and reference.get("referenceLocator", "").startswith("pkg:deb/debian/")
+            for reference in package.get("externalRefs", [])
+        )
+    )
     return output
 
 
@@ -408,10 +454,18 @@ def aggregate(
         platform_id = re.sub(r"[^A-Za-z0-9.-]+", "-", platform).strip("-")
         original_suffix = original_id.removeprefix("SPDXRef-")
         original_suffix = re.sub(r"[^A-Za-z0-9.-]+", "-", original_suffix).strip("-")
-        candidate = f"SPDXRef-{platform_id}-{original_suffix}"
+        candidate = (
+            original_id
+            if original_id.startswith("SPDXRef-OperatingSystem-")
+            else f"SPDXRef-{platform_id}-{original_suffix}"
+        )
         suffix = 2
         while candidate in used_ids:
-            candidate = f"SPDXRef-{platform_id}-{original_suffix}-{suffix}"
+            candidate = (
+                f"{original_id}-{platform_id}-{suffix}"
+                if original_id.startswith("SPDXRef-OperatingSystem-")
+                else f"SPDXRef-{platform_id}-{original_suffix}-{suffix}"
+            )
             suffix += 1
         return candidate
 

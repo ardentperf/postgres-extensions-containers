@@ -11,6 +11,8 @@ def checksum(value):
 
 
 def package(spdxid, name, version, purl):
+    if "distro=" not in purl:
+        purl += "&distro=debian-12.15" if "?" in purl else "?distro=debian-12.15"
     return {
         "SPDXID": spdxid,
         "copyrightText": "NOASSERTION",
@@ -184,8 +186,11 @@ class ComposeSbomTest(unittest.TestCase):
         _, output, _ = run_composer([document] * 2)
 
         self.assertEqual(
-            [package["name"] for package in output["packages"]],
-            ["extension", "plr-extension-artifacts"],
+            {
+                package["name"] for package in output["packages"]
+                if package["name"] != "debian"
+            },
+            {"extension", "plr-extension-artifacts"},
         )
         self.assertEqual(
             [file["fileName"] for file in output["files"]],
@@ -293,7 +298,43 @@ class ComposeSbomTest(unittest.TestCase):
         ])
 
         _, output, _ = run_composer([document] * 2)
-        self.assertEqual([item["name"] for item in output["packages"]], ["plr-extension-artifacts"])
+        self.assertEqual(
+            [item["name"] for item in output["packages"] if item["name"] != "debian"],
+            ["plr-extension-artifacts"],
+        )
+
+    def test_trivy_os_package_is_preserved_in_aggregate(self):
+        document = builder_document([
+            {"name": "lib/ext.so", "digest": {"sha256": "extension"}},
+        ])
+        next(
+            package for package in document["predicate"]["packages"]
+            if package["name"] == "extension"
+        )["externalRefs"][0]["referenceLocator"] = (
+            "pkg:deb/debian/extension@2?arch=amd64&distro=debian-12.15"
+        )
+
+        _, output, _ = run_composer([document] * 2)
+        os_package = next(
+            package for package in output["packages"]
+            if package.get("primaryPackagePurpose") == "OPERATING-SYSTEM"
+        )
+        self.assertEqual(os_package["SPDXID"], "SPDXRef-OperatingSystem-debian-12.15")
+        self.assertEqual(os_package["name"], "debian")
+        self.assertEqual(os_package["versionInfo"], "12.15")
+        relationships = {
+            (rel["relationshipType"], rel["spdxElementId"], rel["relatedSpdxElement"])
+            for rel in output["relationships"]
+        }
+        self.assertIn(
+            ("DESCRIBES", "SPDXRef-DOCUMENT", os_package["SPDXID"]),
+            relationships,
+        )
+        extension_id = next(
+            package["SPDXID"] for package in output["packages"]
+            if package["name"] == "extension"
+        )
+        self.assertIn(("CONTAINS", os_package["SPDXID"], extension_id), relationships)
 
     def test_license_path_selects_named_package(self):
         document = builder_document([
