@@ -52,7 +52,14 @@ for bake_target in "${bake_targets[@]}"; do
     builder_sbom="${output_directory}/sbom-builder.spdx.json"
     jq -e '.predicateType == "https://spdx.dev/Document" and .predicate.name == "sbom-builder" and (.subject | length > 0)' "${builder_sbom}"
     scancode_report="${working_directory}/scans/${bake_target}-${platform//\//-}.json"
-    scancode --license --license-references --json "${scancode_report}" "${output_directory}/licenses"
+    license_scan_root="${working_directory}/license-chunks/${bake_target}-${platform//\//-}/licenses"
+    find "${output_directory}/licenses" -type f -print0 | while IFS= read -r -d '' license_file; do
+      chunk_directory="${license_scan_root}/${license_file#${output_directory}/licenses/}"
+      mkdir -p "${chunk_directory}"
+      csplit -s -z -f "${chunk_directory}/license-" "${license_file}" '/^License:/' '{*}' >/dev/null
+    done
+    scancode --license --license-references --json "${scancode_report}.chunks" "${license_scan_root}"
+    jq '.files[] |= if .type == "file" then (.path |= sub("/license-[0-9]+$"; "") | (.license_detections[]?.matches[]?.from_file) |= sub("/license-[0-9]+$"; "")) else . end' "${scancode_report}.chunks" > "${scancode_report}" && rm "${scancode_report}.chunks"
 
     image_manifest_digest=$(docker buildx imagetools inspect "${image}" --raw | \
       jq -r --arg architecture "${platform#*/}" '

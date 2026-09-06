@@ -358,7 +358,7 @@ class ComposeSbomTest(unittest.TestCase):
         self.assertEqual(package_record["licenseInfoFromFiles"], file_record["licenseInfoInFiles"])
         self.assertEqual(
             package_record["licenseDeclared"],
-            "MIT AND (GPL-2.0-only AND LicenseRef-scancode-pcre)",
+            "MIT",
         )
         self.assertEqual(package_record["licenseConcluded"], "NOASSERTION")
         self.assertIn(

@@ -318,17 +318,14 @@ def compose(builder_document: dict[str, Any], *,
                 - {"NONE", "NOASSERTION"}
             )
     for package in output["packages"]:
+        if package.get("licenseDeclared") not in {None, "NONE", "NOASSERTION"}:
+            continue
         file_licenses = set(package.get("licenseInfoFromFiles", [])) - {"NONE", "NOASSERTION"}
         if not file_licenses:
             continue
-        declared = package.get("licenseDeclared")
-        terms = []
-        if declared not in {None, "NONE", "NOASSERTION"}:
-            terms.append(declared)
-        terms.extend(sorted(file_licenses - set(terms)))
         package["licenseDeclared"] = " AND ".join(
             f"({term})" if LICENSE_OPERATOR.search(term) else term
-            for term in terms
+            for term in sorted(file_licenses)
         )
     extracted = {
         item["licenseId"]: item
