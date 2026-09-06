@@ -139,7 +139,7 @@ contributors are found, the main project maintainers reserve the right to
 
 ## Naming & Tagging Convention
 
-Each extension image has an immutable timestamped tag in this format:
+Each extension image tag follows this format:
 
 ```
 <extension-name>:<ext_version>-<timestamp>-<pg_version>-<distro>
@@ -153,9 +153,10 @@ distro, with build timestamp `202509101200`, results in:
 pg-cron:1.6.7-202509101200-18-trixie
 ```
 
-For convenience, a version-scoped **rolling tag** is also published:
+For convenience, **rolling tags** should also be published:
 
 ```
+pg-cron:1.6.7-18-trixie
 pg-cron:1.6.7-18-trixie
 ```
 
