@@ -71,14 +71,30 @@ def builder_document(subjects):
     }
 
 
+def scan_report(*records):
+    return {
+        "files": [
+            {
+                "path": path,
+                "license_detections": [
+                    {"license_expression_spdx": expression}
+                    for expression in expressions
+                ],
+            }
+            for path, expressions in records
+        ]
+    }
+
+
 SCRIPT = Path(__file__).with_name("compose_sbom.py")
 ROOT = SCRIPT.parent.parent
 
 
-def run_composer(documents, platforms=("linux/amd64", "linux/arm64"), *, check=True):
+def run_composer(documents, platforms=("linux/amd64", "linux/arm64"), *, scan_reports=None, check=True):
     with tempfile.TemporaryDirectory() as directory:
         directory = Path(directory)
         output_path = directory / "aggregate.spdx.json"
+        scan_reports = scan_reports or [{} for _ in documents]
         args = [
             str(SCRIPT),
             "--extension-name", "plr",
@@ -88,6 +104,9 @@ def run_composer(documents, platforms=("linux/amd64", "linux/arm64"), *, check=T
             input_path = directory / f"builder-{index}.json"
             input_path.write_text(json.dumps(document), encoding="utf-8")
             args.extend(["--builder-sbom", str(input_path)])
+            scan_path = directory / f"scan-{index}.json"
+            scan_path.write_text(json.dumps(scan_reports[index]), encoding="utf-8")
+            args.extend(["--scancode-report", str(scan_path)])
             if index < len(platforms):
                 args.extend(["--platform", platforms[index]])
         for platform in platforms[len(documents):]:
@@ -142,10 +161,17 @@ class ComposeSbomTest(unittest.TestCase):
                 {"name": "lib/ext.so", "digest": {"sha256": "extension-arm64"}},
             ])),
         ]
-        _, first, first_bytes = run_composer([document for _, document in documents])
+        reports = [
+            scan_report(("lib/ext.so", ("MIT",))),
+            scan_report(("lib/ext.so", ("Apache-2.0",))),
+        ]
+        _, first, first_bytes = run_composer(
+            [document for _, document in documents], scan_reports=reports
+        )
         _, second, second_bytes = run_composer(
             [document for _, document in reversed(documents)],
             [platform for platform, _ in reversed(documents)],
+            scan_reports=list(reversed(reports)),
         )
         self.assertEqual(first, second)
         self.assertEqual(first_bytes, second_bytes)
@@ -301,6 +327,40 @@ class ComposeSbomTest(unittest.TestCase):
         package_id = next(package["SPDXID"] for package in output["packages"] if package["name"] == "libgomp1")
         self.assertIn(("CONTAINS", package_id, file_id), relationships)
         self.assertNotIn(("CONTAINS", "SPDXRef-Package-gcc", file_id), relationships)
+
+    def test_scancode_licenses_are_added_to_files_and_packages(self):
+        document = builder_document([
+            {"name": "licenses/r-base-core/copyright", "digest": {"sha256": "copyright"}},
+        ])
+        document["predicate"]["packages"].append(
+            package("SPDXRef-Package-r-base-core", "r-base-core", "1", "pkg:generic/r-base-core@1")
+        )
+        report = scan_report((
+            "licenses/r-base-core/copyright",
+            ("GPL-2.0-only AND LicenseRef-scancode-pcre",),
+        ))
+        report["license_references"] = [{
+            "spdx_license_key": "LicenseRef-scancode-pcre",
+            "name": "PCRE License",
+            "text": "PCRE license text",
+        }]
+
+        _, output, _ = run_composer([document] * 2, scan_reports=[report] * 2)
+        file_record = output["files"][0]
+        package_record = next(
+            item for item in output["packages"] if item["name"] == "r-base-core"
+        )
+        self.assertEqual(
+            file_record["licenseInfoInFiles"],
+            ["GPL-2.0-only AND LicenseRef-scancode-pcre"],
+        )
+        self.assertEqual(package_record["licenseInfoFromFiles"], file_record["licenseInfoInFiles"])
+        self.assertEqual(package_record["licenseDeclared"], "NOASSERTION")
+        self.assertEqual(package_record["licenseConcluded"], "NOASSERTION")
+        self.assertIn(
+            {"extractedText": "PCRE license text", "licenseId": "LicenseRef-scancode-pcre", "name": "PCRE License"},
+            output["hasExtractedLicensingInfos"],
+        )
 
     def test_registry_image_subject_is_rejected(self):
         document = builder_document([

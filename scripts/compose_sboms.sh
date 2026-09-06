@@ -9,7 +9,7 @@ export environment=testing
 export registry="${IMAGE_REGISTRY}"
 export revision="${GITHUB_SHA}"
 working_directory="${RUNNER_TEMP}/extension-sbom"
-mkdir -p "${working_directory}/manifests" "${working_directory}/predicates"
+mkdir -p "${working_directory}/manifests" "${working_directory}/predicates" "${working_directory}/scans"
 bake_files=(-f docker-bake.hcl -f "${EXTENSION_NAME}/metadata.hcl")
 bake_definition="${working_directory}/bake.json"
 docker buildx bake "${bake_files[@]}" --print > "${bake_definition}"
@@ -34,6 +34,7 @@ for bake_target in "${bake_targets[@]}"; do
 
   builder_sbom_records=()
   builder_sbom_paths=()
+  scancode_report_paths=()
   platform_manifest_records=()
   for platform in "${platforms[@]}"; do
     output_directory="${working_directory}/${bake_target}-${platform//\//-}"
@@ -50,6 +51,8 @@ for bake_target in "${bake_targets[@]}"; do
 
     builder_sbom="${output_directory}/sbom-builder.spdx.json"
     jq -e '.predicateType == "https://spdx.dev/Document" and .predicate.name == "sbom-builder" and (.subject | length > 0)' "${builder_sbom}"
+    scancode_report="${working_directory}/scans/${bake_target}-${platform//\//-}.json"
+    scancode --license --license-references --json "${scancode_report}" "${output_directory}/licenses"
 
     image_manifest_digest=$(docker buildx imagetools inspect "${image}" --raw | \
       jq -r --arg architecture "${platform#*/}" '
@@ -59,6 +62,7 @@ for bake_target in "${bake_targets[@]}"; do
     test -n "${image_manifest_digest}" && test "${image_manifest_digest}" != "null"
 
     builder_sbom_paths+=("${builder_sbom}")
+    scancode_report_paths+=("${scancode_report}")
     builder_sbom_records+=("{\"platform\":\"${platform}\",\"sha256\":\"$(sha256sum "${builder_sbom}" | awk '{print $1}')\"}")
     platform_manifest_records+=("{\"platform\":\"${platform}\",\"manifestDigest\":\"${image_manifest_digest}\"}")
   done
@@ -80,6 +84,7 @@ for bake_target in "${bake_targets[@]}"; do
   for index in "${!platforms[@]}"; do
     compose_args+=(
       --builder-sbom "${builder_sbom_paths[$index]}"
+      --scancode-report "${scancode_report_paths[$index]}"
       --platform "${platforms[$index]}"
     )
   done
@@ -105,6 +110,7 @@ for bake_target in "${bake_targets[@]}"; do
       "docker": "$(docker --version)",
       "buildx": "$(docker buildx version)",
       "jq": "$(jq --version)",
+      "scancode": "$(scancode --version | head -n 1)",
       "actionsAttest": "${actions_attest_ref}"
     }
   },

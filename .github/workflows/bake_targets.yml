@@ -32,6 +32,23 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install ScanCode
+        env:
+          # renovate: datasource=github-releases depName=aboutcode-org/scancode-toolkit versioning=semver
+          SCANCODE_VERSION: 32.5.0
+          SCANCODE_SHA256: 638adcd0af576d1f4d5b64dde228724b3ca4fdee2c4de20d88e4356be353f027
+        run: |
+          archive="${RUNNER_TEMP}/scancode-toolkit.tar.gz"
+          curl --fail --location --silent --show-error \
+            "https://github.com/aboutcode-org/scancode-toolkit/releases/download/v${SCANCODE_VERSION}/scancode-toolkit-v${SCANCODE_VERSION}_py3.12-linux.tar.gz" \
+            --output "${archive}"
+          echo "${SCANCODE_SHA256}  ${archive}" | sha256sum --check
+          scancode_root="${RUNNER_TEMP}/scancode-toolkit"
+          mkdir -p "${scancode_root}"
+          tar -xzf "${archive}" --strip-components=1 -C "${scancode_root}"
+          (cd "${scancode_root}" && ./configure)
+          echo "${scancode_root}/venv/bin" >> "${GITHUB_PATH}"
+
       - name: Log in to the GitHub Container registry
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:

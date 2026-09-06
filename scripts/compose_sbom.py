@@ -15,6 +15,7 @@ from typing import Any, Sequence
 
 
 EXTENSION_PACKAGE_ID = "SPDXRef-Package-extension-payload"
+LICENSE_REF = re.compile(r"LicenseRef-[A-Za-z0-9][A-Za-z0-9.-]*")
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -64,13 +65,54 @@ def file_id(name: str, algorithm: str, value: str) -> str:
     return f"SPDXRef-File-final-{hashlib.sha256(identity).hexdigest()[:24]}"
 
 
+def scancode_licenses(
+    document: dict[str, Any],
+) -> tuple[dict[str, set[str]], dict[str, dict[str, str]]]:
+    """Return ScanCode SPDX expressions and custom license definitions."""
+
+    licenses_by_file: defaultdict[str, set[str]] = defaultdict(set)
+    custom_licenses: set[str] = set()
+    for record in document.get("files", []):
+        licenses = {
+            expression
+            for detection in record.get("license_detections", [])
+            if (expression := detection.get("license_expression_spdx"))
+            and expression not in {"NONE", "NOASSERTION"}
+        }
+        if not licenses:
+            continue
+        path = record["path"].lstrip("/")
+        licenses_by_file[path].update(licenses)
+        custom_licenses.update(
+            license_id for expression in licenses for license_id in LICENSE_REF.findall(expression)
+        )
+    references = {
+        reference["spdx_license_key"]: {
+            "extractedText": reference.get("text") or "NOASSERTION",
+            "licenseId": reference["spdx_license_key"],
+            "name": reference.get("name") or reference["spdx_license_key"],
+        }
+        for reference in document.get("license_references", [])
+        if reference.get("spdx_license_key") in custom_licenses
+    }
+    for license_id in custom_licenses:
+        references.setdefault(license_id, {
+            "extractedText": "NOASSERTION",
+            "licenseId": license_id,
+            "name": license_id,
+        })
+    return licenses_by_file, references
+
+
 def compose(builder_document: dict[str, Any], *,
             extension_name: str,
             builder_path: Path = Path("builder"),
+            scancode_report: dict[str, Any] | None = None,
             ) -> dict[str, Any]:
     """Return a raw SPDX predicate composed from a builder attestation."""
 
     builder = builder_document["predicate"]
+    licenses_by_file, custom_licenses = scancode_licenses(scancode_report or {})
     final = final_files(builder_document, builder_path)
     builder_records = builder["files"]
     relationships = builder["relationships"]
@@ -168,6 +210,16 @@ def compose(builder_document: dict[str, Any], *,
         for record in selected:
             source_to_final[record["SPDXID"]].add(new_id)
 
+    for record in composed_files:
+        licenses = licenses_by_file.get(record["fileName"].lstrip("/"))
+        if not licenses:
+            continue
+        record["licenseInfoInFiles"] = sorted(
+            set(record.get("licenseInfoInFiles", []))
+            .union(licenses)
+            - {"NONE", "NOASSERTION"}
+        )
+
     owned_final_ids: set[str] = set(direct_final_owners)
     for source_file_id, package_ids_for_file in owners_by_source_file.items():
         final_ids_for_source = source_to_final.get(source_file_id)
@@ -222,9 +274,9 @@ def compose(builder_document: dict[str, Any], *,
         for package_id in sorted(package_ids_for_file)
     )
 
-    output = builder.copy()
+    output = deepcopy(builder)
     output["packages"] = [
-        package for package in packages
+        deepcopy(package) for package in packages
         if package["SPDXID"] in retained_package_ids
     ]
     if extension_file_ids:
@@ -241,6 +293,38 @@ def compose(builder_document: dict[str, Any], *,
         })
     output["files"] = composed_files
     output["relationships"] = composed_relationships
+    package_by_id = {package["SPDXID"]: package for package in output["packages"]}
+    file_by_id = {record["SPDXID"]: record for record in composed_files}
+    licenses_by_package: defaultdict[str, set[str]] = defaultdict(set)
+    for relationship in composed_relationships:
+        package = package_by_id.get(relationship.get("spdxElementId"))
+        file = file_by_id.get(relationship.get("relatedSpdxElement"))
+        if (
+            relationship.get("relationshipType") == "CONTAINS"
+            and package is not None
+            and file is not None
+            and package.get("filesAnalyzed", True) is not False
+        ):
+            licenses_by_package[package["SPDXID"]].update(
+                set(file.get("licenseInfoInFiles", [])) - {"NONE", "NOASSERTION"}
+            )
+    for package_id, licenses in licenses_by_package.items():
+        if licenses:
+            package = package_by_id[package_id]
+            package["licenseInfoFromFiles"] = sorted(
+                set(package.get("licenseInfoFromFiles", []))
+                .union(licenses)
+                - {"NONE", "NOASSERTION"}
+            )
+    extracted = {
+        item["licenseId"]: item
+        for item in output.get("hasExtractedLicensingInfos", [])
+    }
+    for license_id in custom_licenses:
+        extracted.setdefault(license_id, custom_licenses[license_id])
+    output["hasExtractedLicensingInfos"] = [
+        extracted[key] for key in sorted(extracted)
+    ]
     described_ids = {
         relationship["relatedSpdxElement"]
         for relationship in composed_relationships
@@ -292,12 +376,14 @@ def aggregate(
     output["packages"] = []
     output["files"] = []
     output["relationships"] = []
+    output["hasExtractedLicensingInfos"] = []
     output.pop("annotations", None)
 
     entities: dict[tuple[str, str], str] = {}
     used_ids: set[str] = set()
     relationships: dict[str, dict[str, Any]] = {}
     annotations: dict[str, dict[str, Any]] = {}
+    extracted_licenses: dict[str, dict[str, Any]] = {}
 
     def entity_key(entity: dict[str, Any]) -> str:
         return json.dumps(
@@ -358,9 +444,15 @@ def aggregate(
             identity = json.dumps(mapped, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
             annotations[identity] = mapped
 
+        for license_info in document.get("hasExtractedLicensingInfos", []):
+            extracted_licenses[license_info["licenseId"]] = deepcopy(license_info)
+
     output["packages"].sort(key=lambda record: record["SPDXID"])
     output["files"].sort(key=lambda record: record["SPDXID"])
     output["relationships"] = [relationships[key] for key in sorted(relationships)]
+    output["hasExtractedLicensingInfos"] = [
+        extracted_licenses[key] for key in sorted(extracted_licenses)
+    ]
     if annotations:
         output["annotations"] = [annotations[key] for key in sorted(annotations)]
     return output
@@ -383,12 +475,21 @@ def main() -> int:
         required=True,
         help="Platform corresponding to each --builder-sbom input",
     )
+    parser.add_argument(
+        "--scancode-report",
+        type=Path,
+        action="append",
+        required=True,
+        help="ScanCode JSON report corresponding to each --builder-sbom",
+    )
     parser.add_argument("--extension-name", required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 
     if len(args.builder_sbom) != len(args.platform):
         parser.error("--builder-sbom and --platform must have the same number of values")
+    if len(args.builder_sbom) != len(args.scancode_report):
+        parser.error("--builder-sbom and --scancode-report must have the same number of values")
     output = aggregate(
         [
             (
@@ -397,9 +498,12 @@ def main() -> int:
                     read_json(path),
                     extension_name=args.extension_name,
                     builder_path=path,
+                    scancode_report=read_json(scan_path),
                 ),
             )
-            for path, platform in zip(args.builder_sbom, args.platform)
+            for path, platform, scan_path in zip(
+                args.builder_sbom, args.platform, args.scancode_report
+            )
         ],
         extension_name=args.extension_name,
     )

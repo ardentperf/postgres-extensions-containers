@@ -228,7 +228,10 @@ attestation. It contains packages that own files shipped in the final image,
 plus an extension-specific artifacts package for files without a package owner.
 The file list is limited to files actually shipped in the image, including
 copied system libraries and license files. Relationships are trimmed and
-rewritten to match the resulting package and file lists.
+rewritten to match the resulting package and file lists. ScanCode findings for
+the shipped license files are merged into their SPDX `licenseInfoInFiles`
+fields and into the owning packages' `licenseInfoFromFiles` fields; the
+packages' declared and concluded license fields are not rewritten.
 The workflow adds the provisional composition manifest as a canonical,
 document-level SPDX `OTHER` annotation after `compose_sbom.py` produces the
 aggregate; the composer itself remains focused on SBOM inventory composition.
