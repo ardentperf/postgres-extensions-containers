@@ -119,6 +119,13 @@ jobs:
           name: extension-sboms-${{ inputs.extension_name }}-${{ github.run_id }}
           path: extension-sboms
 
+      - name: Log in to the GitHub Container registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Attest aggregate SBOM
         # If this pin changes, verify composer.toolVersions.actionsAttest in the SBOM manifest remains aligned.
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
@@ -306,6 +313,13 @@ jobs:
         with:
           name: extension-sboms-${{ inputs.extension_name }}-${{ github.run_id }}
           path: extension-sboms
+
+      - name: Log in to the GitHub Container registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Attest production aggregate SBOM
         # If this pin changes, verify composer.toolVersions.actionsAttest in the SBOM manifest remains aligned.
