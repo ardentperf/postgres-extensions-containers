@@ -101,6 +101,13 @@ jobs:
           mapfile -t bake_targets < <(jq -r '.target | keys[]' "${bake_definition}")
           test "${#bake_targets[@]}" -gt 0
           attestation_records=()
+          platforms=(linux/amd64 linux/arm64)
+          mapfile -t actions_attest_refs < <(
+            sed -n 's/^[[:space:]]*uses:[[:space:]]*\(actions\/attest@[0-9a-f]\{40\}\).*/\1/p' \
+              "${GITHUB_WORKSPACE}/.github/workflows/bake_targets.yml" | sort -u
+          )
+          test "${#actions_attest_refs[@]}" -eq 1
+          actions_attest_ref="${actions_attest_refs[0]}"
 
           for bake_target in "${bake_targets[@]}"; do
             image=$(jq -r --arg target "${bake_target}" '.target[$target].tags[0]' "${bake_definition}")
@@ -109,7 +116,6 @@ jobs:
             builder_sbom_records=()
             builder_sbom_paths=()
             platform_manifest_records=()
-            platforms=(linux/amd64 linux/arm64)
             for platform in "${platforms[@]}"; do
               output_directory="${working_directory}/${bake_target}-${platform//\//-}"
               mkdir -p "${output_directory}"
@@ -124,7 +130,6 @@ jobs:
                 --progress plain
 
               builder_sbom="${output_directory}/sbom-builder.spdx.json"
-              test -s "${builder_sbom}"
               jq -e '.predicateType == "https://spdx.dev/Document" and .predicate.name == "sbom-builder" and (.subject | length > 0)' "${builder_sbom}"
 
               image_manifest_digest=$(docker buildx imagetools inspect "${image}" --raw | \
@@ -144,14 +149,6 @@ jobs:
             # the signed attestation and OCI descriptor bind that content.
             image_index_digest=$(docker buildx imagetools inspect "${image}" --raw | \
               sha256sum | awk '{print "sha256:" $1}')
-            test -n "${image_index_digest}"
-
-            mapfile -t actions_attest_refs < <(
-              sed -n 's/^[[:space:]]*uses:[[:space:]]*\(actions\/attest@[0-9a-f]\{40\}\).*/\1/p' \
-                "${GITHUB_WORKSPACE}/.github/workflows/bake_targets.yml" | sort -u
-            )
-            test "${#actions_attest_refs[@]}" -eq 1
-            actions_attest_ref="${actions_attest_refs[0]}"
 
             provenance_manifest="${working_directory}/manifests/${bake_target}.json"
             predicate="${working_directory}/predicates/${bake_target}/extension-sbom.spdx.json"
@@ -230,16 +227,14 @@ jobs:
               "${predicate}" > "${predicate}.tmp"
             mv "${predicate}.tmp" "${predicate}"
 
-            test -s "${predicate}"
-
             attestation_records+=("{\"target\":\"${bake_target}\",\"testingImage\":\"${image}\",\"testingSubject\":\"${image%:*}\",\"productionImage\":\"${image/-testing:/:}\",\"productionSubject\":\"${image%%-testing:*}\",\"indexDigest\":\"${image_index_digest}\",\"predicatePath\":\"predicates/${bake_target}/extension-sbom.spdx.json\"}")
           done
 
           cat > "${working_directory}/attestation-manifest.json" <<EOF
           [$(IFS=,; printf '%s' "${attestation_records[*]}")]
           EOF
-          jq -e . "${working_directory}/attestation-manifest.json" > /dev/null
-          echo "manifest=$(jq -c . "${working_directory}/attestation-manifest.json")" >> "$GITHUB_OUTPUT"
+          manifest=$(jq -c . "${working_directory}/attestation-manifest.json")
+          echo "manifest=${manifest}" >> "$GITHUB_OUTPUT"
 
       - name: Upload composed SBOMs
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -409,6 +404,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # Required by the cosign step in copy-images.
+      id-token: write
     steps:
       - name: Copy to production
         uses: cloudnative-pg/postgres-containers/.github/actions/copy-images@main
@@ -429,11 +426,8 @@ jobs:
 
           jq -e 'type == "array" and length > 0' extension-sboms/attestation-manifest.json > /dev/null
           while IFS= read -r record; do
-            jq -e '.testingImage | type == "string" and length > 0' <<< "${record}" > /dev/null
-            jq -e '.productionImage | type == "string" and length > 0' <<< "${record}" > /dev/null
-            jq -e '.indexDigest | type == "string" and length > 0' <<< "${record}" > /dev/null
+            jq -e 'all(.testingImage, .productionImage, .indexDigest; type == "string" and length > 0)' <<< "${record}" > /dev/null
             predicate="extension-sboms/$(jq -r '.predicatePath' <<< "${record}")"
-            test -s "${predicate}"
             jq -e --arg namespace "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1" '
               .spdxVersion == "SPDX-2.3" and
               .SPDXID == "SPDXRef-DOCUMENT" and

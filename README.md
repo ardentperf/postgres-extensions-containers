@@ -139,7 +139,7 @@ contributors are found, the main project maintainers reserve the right to
 
 ## Naming & Tagging Convention
 
-Each extension image tag follows this format:
+Each extension image has an immutable timestamped tag in this format:
 
 ```
 <extension-name>:<ext_version>-<timestamp>-<pg_version>-<distro>
@@ -153,10 +153,9 @@ distro, with build timestamp `202509101200`, results in:
 pg-cron:1.6.7-202509101200-18-trixie
 ```
 
-For convenience, **rolling tags** should also be published:
+For convenience, a version-scoped **rolling tag** is also published:
 
 ```
-pg-cron:1.6.7-18-trixie
 pg-cron:1.6.7-18-trixie
 ```
 
@@ -287,8 +286,8 @@ gh attestation verify "oci://<IMAGE>@<INDEX_DIGEST>" \
   --jq '.[].verificationResult.statement.predicate' > image-sbom.spdx.json
 ```
 
-To retain the complete signed statement, including the SPDX composition
-annotation and its verification metadata, extract the statement instead:
+To retain the complete in-toto statement covered by the signature, including
+the SPDX composition annotation, extract the statement instead:
 
 ```bash
 gh attestation verify "oci://<IMAGE>@<INDEX_DIGEST>" \
@@ -328,19 +327,18 @@ docker buildx imagetools inspect "<IMAGE>@<INDEX_DIGEST>" \
   > buildkit-provenance-linux-arm64.json
 ```
 
-Where supported by the installed verifier, verify the BuildKit SLSA
-provenance against this repository's source URI:
+The Cosign verification above cryptographically verifies the immutable image
+index that contains the BuildKit attestation. The retrieved predicates can then
+be inspected or evaluated with a policy tool that supports BuildKit's SLSA
+format. `slsa-verifier` is not suitable here: its current implementation
+supports SLSA Generator and Google Cloud Build provenance, not BuildKit.
+See the [BuildKit provenance documentation](https://docs.docker.com/build/metadata/attestations/slsa-provenance/)
+for the predicate format.
 
-```bash
-slsa-verifier verify-image \
-  "<IMAGE>@<INDEX_DIGEST>" \
-  --source-uri github.com/cnpg-extensions/postgres-extensions-containers
-```
-
-This verifies the BuildKit provenance separately from the signed GitHub SBOM
-attestation. The two artifacts intentionally answer different questions: the
-BuildKit attestation describes the build, while the GitHub SBOM attestation
-binds the composed inventory and its composition evidence to the image index.
+The BuildKit and GitHub SBOM attestations intentionally answer different
+questions: the BuildKit attestation describes the build, while the GitHub SBOM
+attestation binds the composed inventory and its composition evidence to the
+image index.
 
 ## Image catalogs
 

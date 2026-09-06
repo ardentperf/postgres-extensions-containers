@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
-import copy
 import json
-import sys
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from compose_sbom import aggregate, compose  # noqa: E402
 
 
 def checksum(value):
@@ -74,6 +71,41 @@ def builder_document(subjects):
     }
 
 
+SCRIPT = Path(__file__).with_name("compose_sbom.py")
+ROOT = SCRIPT.parent.parent
+
+
+def run_composer(documents, platforms=("linux/amd64", "linux/arm64"), *, check=True):
+    with tempfile.TemporaryDirectory() as directory:
+        directory = Path(directory)
+        output_path = directory / "aggregate.spdx.json"
+        args = [
+            str(SCRIPT),
+            "--extension-name", "plr",
+            "--output", str(output_path),
+        ]
+        for index, document in enumerate(documents):
+            input_path = directory / f"builder-{index}.json"
+            input_path.write_text(json.dumps(document), encoding="utf-8")
+            args.extend(["--builder-sbom", str(input_path)])
+            if index < len(platforms):
+                args.extend(["--platform", platforms[index]])
+        for platform in platforms[len(documents):]:
+            args.extend(["--platform", platform])
+
+        result = subprocess.run(
+            args,
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        )
+        if check and result.returncode:
+            raise AssertionError(result.stderr)
+        if not output_path.exists():
+            return result, None, None
+        return result, json.loads(output_path.read_text(encoding="utf-8")), output_path.read_bytes()
+
+
 class ComposeSbomTest(unittest.TestCase):
     def test_aggregate_merges_platform_documents(self):
         amd64 = builder_document([
@@ -95,13 +127,7 @@ class ComposeSbomTest(unittest.TestCase):
             "relationshipType": "CONTAINS",
             "relatedSpdxElement": "SPDXRef-File-arm-only",
         })
-        output = aggregate(
-            [
-                ("linux/amd64", compose(amd64, extension_name="plr")),
-                ("linux/arm64", compose(arm64, extension_name="plr")),
-            ],
-            extension_name="plr",
-        )
+        _, output, _ = run_composer([amd64, arm64])
 
         self.assertEqual(output["name"], "plr-multi-platform-sbom")
         self.assertIn("extension", {item["name"] for item in output["packages"]})
@@ -109,26 +135,27 @@ class ComposeSbomTest(unittest.TestCase):
 
     def test_aggregate_is_deterministic(self):
         documents = [
-            ("linux/amd64", compose(builder_document([
+            ("linux/amd64", builder_document([
                 {"name": "lib/ext.so", "digest": {"sha256": "extension"}},
-            ]), extension_name="plr")),
-            ("linux/arm64", compose(builder_document([
+            ])),
+            ("linux/arm64", builder_document([
                 {"name": "lib/ext.so", "digest": {"sha256": "extension-arm64"}},
-            ]), extension_name="plr")),
+            ])),
         ]
-        first = aggregate(documents, extension_name="plr")
-        second = aggregate(copy.deepcopy(documents), extension_name="plr")
-        self.assertEqual(first, second)
-        self.assertEqual(
-            json.dumps(first, sort_keys=True, separators=(",", ":")),
-            json.dumps(second, sort_keys=True, separators=(",", ":")),
+        _, first, first_bytes = run_composer([document for _, document in documents])
+        _, second, second_bytes = run_composer(
+            [document for _, document in reversed(documents)],
+            [platform for platform, _ in reversed(documents)],
         )
+        self.assertEqual(first, second)
+        self.assertEqual(first_bytes, second_bytes)
 
     def test_final_packages_are_retained_and_unshipped_packages_are_removed(self):
-        output = compose(builder_document([
+        document = builder_document([
             {"name": "lib/ext.so", "digest": {"sha256": "extension"}},
             {"name": "generated/artifact", "digest": {"sha256": "generated"}},
-        ]), extension_name="plr")
+        ])
+        _, output, _ = run_composer([document] * 2)
 
         self.assertEqual(
             [package["name"] for package in output["packages"]],
@@ -142,8 +169,9 @@ class ComposeSbomTest(unittest.TestCase):
             (rel["relationshipType"], rel["spdxElementId"], rel["relatedSpdxElement"])
             for rel in output["relationships"]
         }
-        self.assertIn(("CONTAINS", "SPDXRef-Package-extension", output["files"][0]["SPDXID"]), relationships)
-        self.assertIn(("CONTAINS", "SPDXRef-Package-extension-payload", output["files"][1]["SPDXID"]), relationships)
+        package_ids = {package["name"]: package["SPDXID"] for package in output["packages"]}
+        self.assertIn(("CONTAINS", package_ids["extension"], output["files"][0]["SPDXID"]), relationships)
+        self.assertIn(("CONTAINS", package_ids["plr-extension-artifacts"], output["files"][1]["SPDXID"]), relationships)
         self.assertNotIn("base", {package["name"] for package in output["packages"]})
         self.assertNotIn(("DEPENDENCY_OF", "SPDXRef-Package-base", "SPDXRef-Package-extension"), relationships)
         self.assertNotIn(("CONTAINS", "SPDXRef-DocumentRoot-Directory-sbom", "SPDXRef-Package-extension"), relationships)
@@ -189,7 +217,7 @@ class ComposeSbomTest(unittest.TestCase):
             },
         ])
 
-        output = compose(document, extension_name="plr")
+        _, output, _ = run_composer([document] * 2)
         package_names = {item["name"] for item in output["packages"]}
         self.assertIn("libblas3", package_names)
         self.assertIn("shared-license", package_names)
@@ -199,8 +227,9 @@ class ComposeSbomTest(unittest.TestCase):
             for rel in output["relationships"]
         }
         file_id = output["files"][0]["SPDXID"]
-        self.assertIn(("CONTAINS", "SPDXRef-Package-libblas3", file_id), relationships)
-        self.assertIn(("CONTAINS", "SPDXRef-Package-shared-license", file_id), relationships)
+        package_ids = {package["name"]: package["SPDXID"] for package in output["packages"]}
+        self.assertIn(("CONTAINS", package_ids["libblas3"], file_id), relationships)
+        self.assertIn(("CONTAINS", package_ids["shared-license"], file_id), relationships)
         self.assertNotIn(("CONTAINS", "SPDXRef-Package-liblapack3", file_id), relationships)
 
     def test_ambiguous_basename_match_is_extension_owned(self):
@@ -237,7 +266,7 @@ class ComposeSbomTest(unittest.TestCase):
             },
         ])
 
-        output = compose(document, extension_name="plr")
+        _, output, _ = run_composer([document] * 2)
         self.assertEqual([item["name"] for item in output["packages"]], ["plr-extension-artifacts"])
 
     def test_license_path_selects_named_package(self):
@@ -260,7 +289,7 @@ class ComposeSbomTest(unittest.TestCase):
             "relatedSpdxElement": "SPDXRef-File-gcc-copyright",
         })
 
-        output = compose(document, extension_name="plr")
+        _, output, _ = run_composer([document] * 2)
         package_names = {item["name"] for item in output["packages"]}
         self.assertIn("libgomp1", package_names)
         self.assertNotIn("gcc-14-base", package_names)
@@ -269,14 +298,17 @@ class ComposeSbomTest(unittest.TestCase):
             for rel in output["relationships"]
         }
         file_id = output["files"][0]["SPDXID"]
-        self.assertIn(("CONTAINS", "SPDXRef-Package-libgomp1", file_id), relationships)
+        package_id = next(package["SPDXID"] for package in output["packages"] if package["name"] == "libgomp1")
+        self.assertIn(("CONTAINS", package_id, file_id), relationships)
         self.assertNotIn(("CONTAINS", "SPDXRef-Package-gcc", file_id), relationships)
 
     def test_registry_image_subject_is_rejected(self):
-        with self.assertRaisesRegex(ValueError, "image subject"):
-            compose(builder_document([
-                {"name": "pkg:docker/example@latest", "digest": {"sha256": "image"}},
-            ]), extension_name="plr")
+        document = builder_document([
+            {"name": "pkg:docker/example@latest", "digest": {"sha256": "image"}},
+        ])
+        result, _, _ = run_composer([document] * 2, check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("image subject", result.stderr)
 
     def test_malformed_spdx_entries_fail_instead_of_being_skipped(self):
         malformed_entries = {
@@ -290,8 +322,23 @@ class ComposeSbomTest(unittest.TestCase):
                     {"name": "lib/ext.so", "digest": {"sha256": "extension"}},
                 ])
                 document["predicate"][field].append(entry)
-                with self.assertRaises(KeyError):
-                    compose(document, extension_name="plr")
+                result, _, _ = run_composer(
+                    [document] * 2,
+                    check=False,
+                )
+                self.assertNotEqual(result.returncode, 0)
+
+    def test_builder_sbom_and_platform_arguments_must_match(self):
+        document = builder_document([
+            {"name": "lib/ext.so", "digest": {"sha256": "extension"}},
+        ])
+        result, _, _ = run_composer(
+            [document] * 2,
+            platforms=("linux/amd64",),
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must have the same number", result.stderr)
 
 
 if __name__ == "__main__":
