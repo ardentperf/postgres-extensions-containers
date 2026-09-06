@@ -186,11 +186,9 @@ jobs:
               "command": "$(printf '%q ' "${compose_args[@]}")",
               "interpreter": "$(python3 --version 2>&1)",
               "toolVersions": {
-                "python": "$(python3 --version 2>&1)",
                 "docker": "$(docker --version)",
                 "buildx": "$(docker buildx version)",
                 "jq": "$(jq --version)",
-                "cosign": "$(cosign version 2>&1 | sed -n '1p')",
                 "actionsAttest": "${actions_attest_ref}"
               }
             },
