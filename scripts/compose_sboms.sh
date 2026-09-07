@@ -8,9 +8,18 @@ set -Eeuo pipefail
 export environment=testing
 export registry="${IMAGE_REGISTRY}"
 export revision="${GITHUB_SHA}"
+bake_file=docker-bake.hcl
+if [[ "${1:-}" == --bake-file ]]; then
+  bake_file="${2:?missing value for --bake-file}"
+  shift 2
+fi
+if (( $# != 0 )); then
+  echo "usage: $0 [--bake-file PATH]" >&2
+  exit 2
+fi
 working_directory="${RUNNER_TEMP}/extension-sbom"
 mkdir -p "${working_directory}/manifests" "${working_directory}/predicates" "${working_directory}/scans"
-bake_files=(-f docker-bake.hcl -f "${EXTENSION_NAME}/metadata.hcl")
+bake_files=(-f "${bake_file}" -f "${EXTENSION_NAME}/metadata.hcl")
 bake_definition="${working_directory}/bake.json"
 docker buildx bake "${bake_files[@]}" --print > "${bake_definition}"
 

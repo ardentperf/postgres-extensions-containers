@@ -104,7 +104,7 @@ jobs:
         env:
           EXTENSION_NAME: ${{ inputs.extension_name }}
           IMAGE_REGISTRY: ${{ inputs.local && '127.0.0.1:5000' || format('ghcr.io/{0}', github.repository_owner) }}
-        run: ./scripts/compose_sboms.sh
+        run: ./scripts/compose_sboms.sh --bake-file docker-bake.hcl
 
       - name: Upload composed SBOMs
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
