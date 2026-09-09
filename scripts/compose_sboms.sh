@@ -23,13 +23,25 @@ bake_files=(-f "${bake_file}" -f "${EXTENSION_NAME}/metadata.hcl")
 bake_definition="${working_directory}/bake.json"
 docker buildx bake "${bake_files[@]}" --print > "${bake_definition}"
 
+platform_spec="${BUILD_PLATFORMS:-linux/amd64 linux/arm64}"
+read -r -a platforms <<< "${platform_spec}"
+test "${#platforms[@]}" -gt 0
+for platform in "${platforms[@]}"; do
+  case "${platform}" in
+    linux/amd64|linux/arm64) ;;
+    *)
+      echo "unsupported build platform: ${platform}" >&2
+      exit 2
+      ;;
+  esac
+done
+
 # Inject the SBOM stage selector into a temporary Dockerfile.
 sed '1iARG BUILDKIT_SBOM_SCAN_STAGE=builder' "${EXTENSION_NAME}/Dockerfile" > "${EXTENSION_NAME}/.sbom.Dockerfile"
 
 mapfile -t bake_targets < <(jq -r '.target | keys[]' "${bake_definition}")
 test "${#bake_targets[@]}" -gt 0
 attestation_records=()
-platforms=(linux/amd64 linux/arm64)
 mapfile -t actions_attest_refs < <(
   sed -n 's/^[[:space:]]*uses:[[:space:]]*\(actions\/attest@[0-9a-f]\{40\}\).*/\1/p' \
     "${GITHUB_WORKSPACE}/.github/workflows/bake_targets.yml" | sort -u
@@ -40,6 +52,17 @@ actions_attest_ref="${actions_attest_refs[0]}"
 for bake_target in "${bake_targets[@]}"; do
   image=$(jq -r --arg target "${bake_target}" '.target[$target].tags[0]' "${bake_definition}")
   test -n "${image}" && test "${image}" != "null"
+
+  # The historical Debian Bake context is the target directory, while the
+  # pgrx Bake context is the repository root so it can COPY shared pgrx policy.
+  # Keep this override context-neutral; the shared composer remains unaware of
+  # the build system.
+  build_context=$(jq -r --arg target "${bake_target}" '.target[$target].context' "${bake_definition}")
+  if [[ "${build_context}" == "." || "${build_context}" == "./" ]]; then
+    sbom_dockerfile="${EXTENSION_NAME}/.sbom.Dockerfile"
+  else
+    sbom_dockerfile=".sbom.Dockerfile"
+  fi
 
   builder_sbom_records=()
   builder_sbom_paths=()
@@ -53,7 +76,7 @@ for bake_target in "${bake_targets[@]}"; do
     # local SBOM generation and export work.
     docker buildx bake "${bake_files[@]}" "${bake_target}" \
       --set "*.platform=${platform}" \
-      --set "*.dockerfile=.sbom.Dockerfile" \
+      --set "${bake_target}.dockerfile=${sbom_dockerfile}" \
       --set "*.output=type=local,dest=${output_directory}" \
       --set "*.attest=type=sbom" \
       --progress plain
@@ -68,13 +91,20 @@ for bake_target in "${bake_targets[@]}"; do
       csplit -s -z -f "${chunk_directory}/license-" "${license_file}" '/^License:/' '{*}' >/dev/null
     done
     scancode --license --license-references --json "${scancode_report}.chunks" "${license_scan_root}"
-    jq '.files[] |= if .type == "file" then (.path |= sub("/license-[0-9]+$"; "") | (.license_detections[]?.matches[]?.from_file) |= sub("/license-[0-9]+$"; "")) else . end' "${scancode_report}.chunks" > "${scancode_report}" && rm "${scancode_report}.chunks"
+    jq '.files[] |= if .type == "file" then (.path |= sub("/license-[0-9]+$"; "") | (.license_detections[]?.matches[]?.from_file) |= sub("/license-[0-9]+$"; "")) else . end' "${scancode_report}.chunks" > "${scancode_report}" && rm -f "${scancode_report}.chunks"
 
-    image_manifest_digest=$(docker buildx imagetools inspect "${image}" --raw | \
-      jq -r --arg architecture "${platform#*/}" '
+    raw_image_definition=$(docker buildx imagetools inspect "${image}" --raw)
+    image_manifest_digest=$(jq -r --arg architecture "${platform#*/}" '
+      if (.manifests? | type) == "array" then
         [.manifests[] |
          select(.platform.os == "linux" and .platform.architecture == $architecture) |
-         .digest] | first // empty')
+         .digest] | first // empty
+      else
+        empty
+      end' <<< "${raw_image_definition}")
+    if [[ -z "${image_manifest_digest}" ]]; then
+      image_manifest_digest="sha256:$(printf '%s' "${raw_image_definition}" | sha256sum | awk '{print $1}')"
+    fi
     test -n "${image_manifest_digest}" && test "${image_manifest_digest}" != "null"
 
     builder_sbom_paths+=("${builder_sbom}")
@@ -141,11 +171,12 @@ for bake_target in "${bake_targets[@]}"; do
 }
 EOF
   jq -e --arg namespace "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1" \
+    --argjson platform_count "${#platforms[@]}" \
     --arg index_digest "${image_index_digest}" \
     --arg actions_attest_ref "${actions_attest_ref}" \
     '.schemaVersion == $namespace and
-     (.inputs.builderSboms | length == 2) and
-     (.image.platforms | length == 2) and
+     (.inputs.builderSboms | length == $platform_count) and
+     (.image.platforms | length == $platform_count) and
      .image.indexDigest == $index_digest and
      .composer.toolVersions.actionsAttest == $actions_attest_ref' \
     "${provenance_manifest}"

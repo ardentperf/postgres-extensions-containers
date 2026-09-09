@@ -385,7 +385,7 @@ tasks:
           EXTENSION_IMAGE:
             # Rewrite host:port to the internal registry name and port used
             # within the Docker network.
-            sh: sed -E 's/^{{ .REGISTRY_HOST_NAME }}:{{ .REGISTRY_HOST_PORT }}/{{ .REGISTRY_NAME }}:{{ .REGISTRY_INTERNAL_PORT }}/;t' <<< "{{ .EXTENSION_IMAGE }}"
+            sh: sed -E 's/^(localhost|127\.0\.0\.1):{{ .REGISTRY_HOST_PORT }}/{{ .REGISTRY_NAME }}:{{ .REGISTRY_INTERNAL_PORT }}/;t' <<< "{{ .EXTENSION_IMAGE }}"
     requires:
       vars:
         - name: TARGET

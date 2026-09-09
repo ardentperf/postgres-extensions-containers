@@ -1,0 +1,156 @@
+name: Build, test and publish pgrx extensions
+
+on:
+  push:
+  workflow_dispatch:
+    inputs:
+      extension_name:
+        description: "The pgrx extension to build (directory name)"
+        required: true
+        type: string
+      local:
+        description: "Use the local registry and skip GitHub-only side effects"
+        required: false
+        default: false
+        type: boolean
+      platform:
+        description: "Single platform for local validation (linux/amd64 or linux/arm64); leave empty for multi-arch builds"
+        required: false
+        default: ""
+        type: string
+
+defaults:
+  run:
+    shell: 'bash -Eeuo pipefail -x {0}'
+
+permissions: {}
+
+jobs:
+  # Discovery and build-system filtering happen before dorny creates filters or
+  # a matrix. Debian's workflow therefore cannot receive a pgrx target.
+  change-triage:
+    name: Check changed pgrx files
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.get-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Fetch valid pgrx targets
+        id: get-targets
+        uses: dagger/dagger-for-github@27b130bf0f79a7f6fbbbe0fbca6760dc9bb40a77 # v8.4.1
+        env:
+          # renovate: datasource=github-tags depName=dagger/dagger versioning=semver
+          DAGGER_VERSION: 0.21.9
+        with:
+          version: ${{ env.DAGGER_VERSION }}
+          verb: call
+          module: ./dagger/maintenance/
+          args: get-pgrx-targets
+
+      - name: Validate extension name
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          INPUT_EXTENSION_NAME: ${{ github.event.inputs.extension_name }}
+          INPUT_LOCAL: ${{ github.event.inputs.local }}
+          INPUT_PLATFORM: ${{ github.event.inputs.platform }}
+          VALID_TARGETS: ${{ steps.get-targets.outputs.output }}
+        run: |
+          if ! echo "$VALID_TARGETS" | jq -e --arg ext "$INPUT_EXTENSION_NAME" 'index($ext)' >/dev/null; then
+            echo "::error::'$INPUT_EXTENSION_NAME' is not a valid pgrx target. Valid targets: $VALID_TARGETS"
+            exit 1
+          fi
+          case "$INPUT_PLATFORM" in
+            ""|linux/amd64|linux/arm64) ;;
+            *)
+              echo "::error::platform must be linux/amd64, linux/arm64, or empty"
+              exit 1
+              ;;
+          esac
+          if [[ -n "$INPUT_PLATFORM" && "$INPUT_LOCAL" != true ]]; then
+            echo "::error::platform overrides are only allowed for local validation"
+            exit 1
+          fi
+
+      - name: Compute paths-filter pgrx block
+        env:
+          VALID_TARGETS: ${{ steps.get-targets.outputs.output }}
+        run: |
+          test "$(echo "$VALID_TARGETS" | jq 'length')" -gt 0
+          {
+            echo 'EXTENSIONS<<YAML_EOF'
+            echo "$VALID_TARGETS" | jq -r '.[] | "\(.):\n  - \"\(.)/**\"\n  - *shared"'
+            echo 'YAML_EOF'
+          } >> "$GITHUB_ENV"
+
+      - name: Check for pgrx changes
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          filters: |
+            _shared: &shared
+              - 'docker-bake-pgrx.hcl'
+              - 'pgrx/**'
+              - 'scripts/compose_sbom.py'
+              - 'dagger/maintenance/parse.go'
+              - 'dagger/maintenance/updatelibs.go'
+              - 'renovate.json'
+              - '.github/workflows/pgrx.yml'
+              - '.github/workflows/pgrx_targets.yml'
+              - 'CONTRIBUTING_NEW_PGRX_EXTENSION.md'
+            ${{ env.EXTENSIONS }}
+
+      - name: Compute matrix
+        id: get-matrix
+        env:
+          CHANGES: ${{ steps.filter.outputs.changes }}
+          INPUT_EXTENSION_NAME: ${{ github.event.inputs.extension_name }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [[ "$EVENT_NAME" == workflow_dispatch ]]; then
+            CHANGES="[\"$INPUT_EXTENSION_NAME\"]"
+          fi
+          echo "matrix=$(echo "$CHANGES" | jq -c 'map(select(. != "_shared"))')" >> "$GITHUB_OUTPUT"
+
+  Pgrx:
+    name: Build pgrx target
+    needs: change-triage
+    permissions:
+      packages: write
+      contents: read
+      id-token: write
+      security-events: write
+    if: ${{ join(fromJSON(needs.change-triage.outputs.matrix)) != '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        extension: ${{ fromJSON(needs.change-triage.outputs.matrix) }}
+    uses: ./.github/workflows/pgrx_targets.yml
+    with:
+      extension_name: ${{ matrix.extension }}
+      local: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.local == 'true' }}
+      platform: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.platform || '' }}
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+  automerge-gate:
+    name: pgrx gate
+    if: ${{ always() }}
+    needs: [change-triage, Pgrx]
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Verify pgrx results
+        if: >-
+          ${{
+            needs.change-triage.result != 'success' ||
+            (needs.Pgrx.result != 'success' && needs.Pgrx.result != 'skipped')
+          }}
+        run: |
+          echo "pgrx CI failed: triage=${{ needs.change-triage.result }} build=${{ needs.Pgrx.result }}"
+          exit 1
+      - name: CI passed
+        run: echo "All pgrx checks passed"

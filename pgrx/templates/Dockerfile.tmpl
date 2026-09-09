@@ -1,0 +1,81 @@
+# SPDX-FileCopyrightText: Copyright © contributors to CNPG Extensions.
+# SPDX-License-Identifier: Apache-2.0
+
+# Copy this file into the target directory and edit it. The Dockerfile is the
+# source of truth for the source archive, Cargo package, tool versions, native
+# libraries, and payload normalization. Do not replace these visible commands
+# with a repository-specific hidden build helper.
+ARG BASE=ghcr.io/cloudnative-pg/postgresql:<PG_MAJOR>-minimal-trixie
+FROM ${BASE} AS builder
+
+ARG PG_MAJOR
+ARG EXTENSION=<extension_sql_name>
+ARG RUST_VERSION=1.97.1
+ARG PGRX_VERSION=<pgrx_version>
+ARG CARGO_CYCLONEDX_VERSION=0.5.9
+ARG CARGO_ABOUT_VERSION=0.9.2
+ENV CARGO_HOME=/root/.cargo CARGO_TARGET_DIR=/build-target PGRX_HOME=/root/.pgrx PATH=/root/.cargo/bin:${PATH}
+
+USER 0
+# Customize this list for native compilation. The final image receives only
+# the extension's runtime linker closure, not compiler or PostgreSQL headers.
+RUN set -eux; apt-get update; apt-get install -y --no-install-recommends \
+      build-essential ca-certificates clang cmake curl git libclang-dev \
+      libssl-dev pkg-config python3 postgresql-server-dev-${PG_MAJOR}; \
+    rm -rf /var/lib/apt/lists/*
+
+# cargo-pgrx must match the pgrx crate version used by the source release.
+RUN set -eux; curl --proto '=https' --tlsv1.2 --fail --silent --show-error https://sh.rustup.rs | \
+      sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"; \
+    rustup component add rustfmt; \
+    cargo install --locked --version "${PGRX_VERSION}" cargo-pgrx; \
+    cargo install --locked --version "${CARGO_CYCLONEDX_VERSION}" cargo-cyclonedx; \
+    cargo install --locked --version "${CARGO_ABOUT_VERSION}" cargo-about --features cli
+
+# The pgrx Bake context is the repository root so this shared policy file can
+# be copied without duplicating it in every target directory.
+COPY pgrx/license-about.toml /tmp/license-about.toml
+WORKDIR /workspace/source
+
+# renovate: datasource=github-tags depName=<owner>/<repo> versioning=semver
+RUN curl --fail --location --silent --show-error "https://github.com/<owner>/<repo>/archive/<40-character-commit>.tar.gz" -o /tmp/source.tar.gz # v<release>
+
+RUN set -eux; \
+    sha256sum /tmp/source.tar.gz | awk '{print $1}' > /tmp/source-archive-sha256; \
+    tar -xzf /tmp/source.tar.gz --strip-components=1 -C /workspace/source; \
+    test -s <manifest-path>/Cargo.lock; \
+    sha256sum <manifest-path>/Cargo.lock | awk '{print $1}' > /tmp/cargo-lock-sha256
+
+# This initialization targets the selected pg_config. The locked metadata
+# command is the required lockfile guard and runs before package generation.
+RUN cargo pgrx init --pg${PG_MAJOR} "/usr/lib/postgresql/${PG_MAJOR}/bin/pg_config" --no-run
+RUN cargo metadata --locked --format-version=1 --manifest-path <manifest-path>/Cargo.toml \
+      --features pg${PG_MAJOR} --no-default-features
+
+# Generate reports from exactly the manifest/features used to package the
+# extension. Keep both files under /tmp/pgrx-sbom; they are not runtime files.
+RUN set -eux; mkdir -p /tmp/pgrx-sbom; \
+    cargo cyclonedx --manifest-path <manifest-path>/Cargo.toml --features pg${PG_MAJOR} \
+      --no-default-features --format json --spec-version 1.5 --override-filename pgrx; \
+    cyclonedx_file="<manifest-path>/pgrx.json"; test -s "${cyclonedx_file}"; \
+    cp "${cyclonedx_file}" /tmp/pgrx-sbom/cyclonedx.json; \
+    cargo about generate --config /tmp/license-about.toml --format json --locked --fail \
+      --features pg${PG_MAJOR} --no-default-features --manifest-path <manifest-path>/Cargo.toml \
+      > /tmp/pgrx-sbom/cargo-about.json
+
+# Package using the source-specific arguments, then copy the .so, control,
+# SQL, runtime /system libraries, and complete /licenses/rust evidence into
+# /payload. All required files must exist before the final stages are reached.
+RUN cargo pgrx package --profile release --features pg${PG_MAJOR} --no-default-features \
+      --pg-config "/usr/lib/postgresql/${PG_MAJOR}/bin/pg_config" --out-dir /tmp/pgrx-package
+# ...target-specific payload normalization and cargo-about license materializing...
+
+# This named stage is the only raw-report export contract. It keeps builder
+# source/tooling out of the final scratch image.
+FROM scratch AS pgrx-sbom
+COPY --from=builder /tmp/pgrx-sbom/ /pgrx-sbom/
+
+FROM scratch
+# Copy only /payload; do not copy raw reports, source, Cargo, or build cache.
+COPY --from=builder /payload/ /
+USER 65532:65532
