@@ -20,7 +20,7 @@ ARG PG_MAJOR
 COPY --parents --from=builder /usr/share/doc/./r-base-core/copyright /licenses/
 COPY --parents --from=builder /usr/share/doc/./libblas3/copyright /licenses/
 COPY --parents --from=builder /usr/share/doc/./libdeflate0/copyright /licenses/
-COPY --parents --from=builder /usr/share/doc/./libgomp1/copyright /licenses/
+COPY --parents --from=builder /usr/share/doc/./gcc-*-base/copyright /licenses/
 COPY --parents --from=builder /usr/share/doc/./libtirpc3*/copyright /licenses/
 COPY --from=builder /usr/share/doc/postgresql-${PG_MAJOR}-plr/copyright /licenses/postgresql-${PG_MAJOR}-plr/
 
