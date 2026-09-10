@@ -38,6 +38,8 @@ ARG PG_MAJOR
 # the "dynamic_library_path" GUC to include this path.
 # For more details, see: https://cloudnative-pg.io/docs/current/imagevolume_extensions#how-it-works
 # COPY --from=builder /usr/lib/postgresql/${PG_MAJOR}/lib/{{ .Name }}* /lib/
+# Check the builder image once to identify additional system libraries:
+# docker run --rm --entrypoint ldd <builder-image> /usr/lib/postgresql/<PG_MAJOR>/lib/<extension>.so
 
 # Share
 # TODO: Uncomment and customize the COPY command below
