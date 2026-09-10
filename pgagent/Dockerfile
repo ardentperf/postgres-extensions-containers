@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # SPDX-FileCopyrightText: Copyright © contributors to CNPG Extensions.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -9,45 +10,23 @@ ARG EXT_VERSION
 
 USER 0
 
-RUN set -eux && \
-	ldconfig -p | awk '{print $NF}' | grep '^/' | sort | uniq > /tmp/base-image-libs.out && \
-	apt-get update && \
+RUN apt-get update && \
 	apt-get install -y --no-install-recommends "pgagent=${EXT_VERSION}"
-
-RUN mkdir -p /system /licenses && \
-	ldd /usr/bin/pgagent \
-		| awk '{print $3}' | grep '^/' | sort | uniq > /tmp/all-deps.out && \
-	comm -13 /tmp/base-image-libs.out /tmp/all-deps.out > /tmp/libraries.out && \
-	while read -r lib; do \
-		resolved=$(readlink -f "$lib"); \
-		dir=$(dirname "$lib"); \
-		base=$(basename "$lib"); \
-		cp -a "$resolved" /system/; \
-		for file in "$dir"/"${base%.so*}.so"*; do \
-			[ -e "$file" ] || continue; \
-			if [ -L "$file" ] && [ "$(readlink -f "$file")" = "$resolved" ]; then \
-				ln -sf "$(basename "$resolved")" "/system/$(basename "$file")"; \
-			fi; \
-		done; \
-	done < /tmp/libraries.out && \
-	for lib in $(find /system -maxdepth 1 -type f -name '*.so*'); do \
-		pkg=$(dpkg -S "$(basename "$lib")" | grep -v "diversion by" | awk -F: '/:/{print $1; exit}'); \
-		[ -z "$pkg" ] && continue; \
-		mkdir -p "/licenses/$pkg" && cp -a "/usr/share/doc/$pkg/copyright" "/licenses/$pkg/copyright"; \
-	done
 
 FROM scratch
 ARG PG_MAJOR
 
 # Licenses
-COPY --from=builder /licenses /licenses/
+COPY --parents --from=builder /usr/share/doc/./libboost-filesystem1.*/copyright /licenses/
+COPY --parents --from=builder /usr/share/doc/./libboost-thread1.*/copyright /licenses/
 COPY --from=builder /usr/share/doc/pgagent/copyright /licenses/pgagent/
 
 # Binary
 COPY --from=builder /usr/bin/pgagent /bin/
 
 # System libs
-COPY --from=builder /system /system/
+COPY --from=builder /lib/*-linux-gnu/libboost_filesystem.so.* /system/
+COPY --from=builder /lib/*-linux-gnu/libboost_thread.so.* /system/
 
 # Share
 COPY --from=builder /usr/share/postgresql/${PG_MAJOR}/extension/pgagent* /share/extension/
