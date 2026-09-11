@@ -14,23 +14,21 @@ metadata = {
   bin_path                 = []
   env                      = {}
   auto_update_os_libs      = false
-  // pgvector is provided by the selected CNPG extension catalog. It is not a
-  // local target and must not acquire a stub directory in this repository.
   required_extensions      = ["pgvector"]
   create_extension         = true
 
-  // The source release is declared in pg-search/Dockerfile. Keep the
-  // catalog/image version synchronized with its Renovate tag comment.
   versions = {
     bookworm = {
       "18" = {
-        package = "0.25.6"
+        # renovate: datasource=github-tags depName=paradedb/paradedb versioning=semver
+        package = "v0.25.6"
         sql     = "0.25.6"
       }
     }
     trixie = {
       "18" = {
-        package = "0.25.6"
+        # renovate: datasource=github-tags depName=paradedb/paradedb versioning=semver
+        package = "v0.25.6"
         sql     = "0.25.6"
       }
     }

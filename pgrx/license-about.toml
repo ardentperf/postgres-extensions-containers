@@ -20,6 +20,7 @@ accepted = [
     "MPL-2.0",
     "zlib-acknowledgement",
     "PostgreSQL",
+    "NCSA",
 ]
 
 [pg_parquet.clarify]

@@ -11,7 +11,7 @@ class DockerfileContractTest(unittest.TestCase):
             "pg-graphql": "pgrx.json",
             "pg-jsonschema": "pgrx.json",
             "pg-parquet": "pgrx.json",
-            "pg-search": "pg_search/pgrx.json",
+            "pg-search": "pgrx.json",
             "pg-session-jwt": "pgrx.json",
         }
         for target, report_path in expected.items():
@@ -32,6 +32,11 @@ class DockerfileContractTest(unittest.TestCase):
                     'find /build -type f -name pgrx.json',
                     dockerfile,
                 )
+                if target == "pg-search":
+                    self.assertIn(
+                        "RUN ln -s pg_search/pgrx.json /build/pgrx.json",
+                        dockerfile,
+                    )
                 if target == "pg-jsonschema":
                     helper_text = helper.read_text(encoding="utf-8")
                     self.assertNotIn("/build", helper_text)
