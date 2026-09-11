@@ -5,9 +5,11 @@ SPDX-License-Identifier: Apache-2.0
 -->
 
 [pg_jsonschema](https://github.com/supabase/pg_jsonschema) is a PostgreSQL
-extension that provides JSON Schema validation for `json` and `jsonb` values.
-The image is built from the upstream `v0.3.4` release and supports PostgreSQL
-18 on bookworm and trixie.
+extension that adds support for [JSON Schema](https://json-schema.org/)
+validation on the `json` and `jsonb` data types. JSON Schema describes the
+expected structure and constraints of JSON documents, allowing the extension
+to validate values, check schemas, and report validation errors directly in
+SQL.
 
 ## Usage
 
