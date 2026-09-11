@@ -17,7 +17,10 @@ pg-example/
 
 Copy the templates, then edit the Dockerfile directly. Keep the source archive,
 Cargo package/manifest selection, native packages, matching cargo-pgrx version,
-and output normalization visible in that Dockerfile.
+and output normalization visible in that Dockerfile. The checked-in helper in
+`pgrx/` may own shared Rust/reporting setup when a Dockerfile downloads the
+source before deriving its build-tool versions; the Dockerfile must invoke
+that helper explicitly.
 
 `metadata.hcl` is the CNPG/catalog source and must set:
 
@@ -37,11 +40,13 @@ release tag.
 The target Dockerfile must visibly perform the following sequence:
 
 - install PostgreSQL development headers and target-specific native build deps;
-- install a pinned Rust toolchain and matching cargo-pgrx;
-- download a 40-character commit-pinned GitHub archive with a Renovate tag
-  comment;
+- install a pinned Rust toolchain and matching cargo-pgrx, directly or through
+  an explicitly invoked helper in `pgrx/`;
+- download a Renovate-managed GitHub source archive, either commit-pinned or
+  selected through a tag/version input;
 - verify `Cargo.lock` with `cargo metadata --locked` before packaging;
-- generate CycloneDX and cargo-about reports from the same manifest/features;
+- generate CycloneDX and cargo-about reports from the same manifest/features,
+  directly or through that helper;
 - run `cargo pgrx package` and normalize `.so`, control, SQL, runtime library,
   and license files into `/payload`;
 - expose `/pgrx-sbom/cyclonedx.json` and `/pgrx-sbom/cargo-about.json` through

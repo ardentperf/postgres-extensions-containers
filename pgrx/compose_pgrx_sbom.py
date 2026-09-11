@@ -4,9 +4,8 @@
 The input is already the composed final-image SPDX predicate. This merger
 adds Cargo packages and dependency relationships from CycloneDX, connects
 license text/evidence from cargo-about through valid SPDX fields, and extends
-the existing document-level composition annotation with reproducible pgrx
-build evidence. Raw Cargo reports remain optional diagnostics after this
-program finishes.
+the existing document-level composition annotation with Cargo report evidence.
+Raw Cargo reports remain optional diagnostics after this program finishes.
 """
 
 from __future__ import annotations
@@ -319,11 +318,9 @@ def update_composition_annotation(
 
 def enrich(
     document: dict[str, Any],
-    reports: list[tuple[str, Path, Path, Path]],
+    reports: list[tuple[str, Path, Path]],
     *,
     extension_name: str,
-    dockerfile: Path,
-    wrapper_revision: str,
 ) -> dict[str, Any]:
     if len({platform for platform, *_ in reports}) != len(reports):
         raise ValueError("pgrx report platforms must be unique")
@@ -339,13 +336,11 @@ def enrich(
         for relationship in output.get("relationships", [])
     }
     enrichment_reports: list[dict[str, Any]] = []
-    sources: list[dict[str, Any]] = []
     all_evidence: list[dict[str, Any]] = []
 
-    for platform, cyclonedx_path, about_path, metadata_path in reports:
+    for platform, cyclonedx_path, about_path in reports:
         cyclonedx = read_json(cyclonedx_path)
         about = read_json(about_path)
-        metadata = read_json(metadata_path)
         packages, refs, evidence = parse_components(cyclonedx, about)
         all_evidence.extend(evidence)
         for package_id, package in packages.items():
@@ -362,33 +357,16 @@ def enrich(
                 relationship_keys.add(key)
                 output.setdefault("relationships", []).append(relationship)
 
-        source = metadata.get("source", {})
-        cargo = metadata.get("cargo", {})
-        reports_metadata = metadata.get("reports", {})
         actual_cyclonedx_sha = sha256_file(cyclonedx_path)
         actual_about_sha = sha256_file(about_path)
-        if reports_metadata.get("cyclonedxSha256") not in {None, actual_cyclonedx_sha}:
-            raise ValueError(f"{metadata_path}: CycloneDX hash does not match report")
-        if reports_metadata.get("cargoAboutSha256") not in {None, actual_about_sha}:
-            raise ValueError(f"{metadata_path}: cargo-about hash does not match report")
-        sources.append(source)
         enrichment_reports.append({
             "platform": platform,
             "cyclonedxSha256": actual_cyclonedx_sha,
             "cargoAboutSha256": actual_about_sha,
-            "cargoLockSha256": source.get("cargoLockSha256"),
-            "sourceArchiveSha256": source.get("archiveSha256"),
-            "sourceCommit": source.get("commit"),
         })
 
-    if not sources:
+    if not enrichment_reports:
         raise ValueError("at least one pgrx report is required")
-    source_keys = {
-        json.dumps({key: value for key, value in source.items() if key != "platform"}, sort_keys=True)
-        for source in sources
-    }
-    if len(source_keys) != 1:
-        raise ValueError("pgrx platforms disagree about source archive or Cargo.lock")
 
     for package in output.get("packages", []):
         if package.get("SPDXID", "").startswith("SPDXRef-Cargo-"):
@@ -408,20 +386,7 @@ def enrich(
     enrichment = {
         "schemaVersion": PGRX_NAMESPACE,
         "extension": extension_name,
-        "source": deepcopy(sources[0]),
         "cargoReports": sorted(enrichment_reports, key=lambda value: value["platform"]),
-        "buildSelection": {
-            "cargo": read_json(reports[0][3]).get("cargo", {}),
-            "dockerfile": str(dockerfile),
-            "dockerfileSha256": sha256_file(dockerfile),
-        },
-        "wrapper": {
-            "revision": wrapper_revision,
-            "relationship": {
-                "filesystemComposition": COMPOSITION_NAMESPACE,
-                "cargoLicenseEnrichment": PGRX_NAMESPACE,
-            },
-        },
     }
     update_composition_annotation(output, enrichment)
     output["packages"].sort(key=lambda package: package["SPDXID"])
@@ -439,22 +404,17 @@ def main() -> int:
     parser.add_argument("--extension-name", required=True)
     parser.add_argument("--cargo-cyclonedx", type=Path, action="append", required=True)
     parser.add_argument("--cargo-about", type=Path, action="append", required=True)
-    parser.add_argument("--pgrx-metadata", type=Path, action="append", required=True)
     parser.add_argument("--platform", action="append", required=True)
-    parser.add_argument("--dockerfile", type=Path, required=True)
-    parser.add_argument("--wrapper-revision", required=True)
     args = parser.parse_args()
 
-    paths = [args.cargo_cyclonedx, args.cargo_about, args.pgrx_metadata, args.platform]
+    paths = [args.cargo_cyclonedx, args.cargo_about, args.platform]
     if len({len(value) for value in paths}) != 1:
-        parser.error("Cargo reports, metadata, and platforms must have the same number of values")
-    reports = list(zip(args.platform, args.cargo_cyclonedx, args.cargo_about, args.pgrx_metadata))
+        parser.error("Cargo reports and platforms must have the same number of values")
+    reports = list(zip(args.platform, args.cargo_cyclonedx, args.cargo_about))
     result = enrich(
         read_json(args.spdx),
         reports,
         extension_name=args.extension_name,
-        dockerfile=args.dockerfile,
-        wrapper_revision=args.wrapper_revision,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("w", encoding="utf-8") as stream:

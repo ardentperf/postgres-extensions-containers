@@ -26,7 +26,6 @@ done
 for bake_target in "${bake_targets[@]}"; do
   cyclonedx_paths=()
   about_paths=()
-  metadata_paths=()
 
   for platform in "${platforms[@]}"; do
     output_directory="${working_directory}/pgrx-${bake_target}-${platform//\//-}"
@@ -44,23 +43,20 @@ for bake_target in "${bake_targets[@]}"; do
     report_root="${output_directory}/pgrx-sbom"
     cyclonedx="${report_root}/cyclonedx.json"
     about="${report_root}/cargo-about.json"
-    metadata="${report_root}/pgrx-build.json"
     test -s "${cyclonedx}"
     test -s "${about}"
-    test -s "${metadata}"
-    jq -e '.source.archiveUrl and .source.commit and .source.archiveSha256 and .source.cargoLockSha256 and .cargo.package and .reports.cyclonedxSha256 and .reports.cargoAboutSha256' "${metadata}" >/dev/null
 
     runtime_directory="${working_directory}/${bake_target}-${platform//\//-}"
     find "${runtime_directory}/lib" -maxdepth 1 -type f -name '*.so' -print -quit | grep -q .
     find "${runtime_directory}/share/extension" -maxdepth 1 -type f -name '*.control' -print -quit | grep -q .
     find "${runtime_directory}/share/extension" -maxdepth 1 -type f -name '*.sql' -print -quit | grep -q .
     test -d "${runtime_directory}/licenses/rust"
-    test -d "${runtime_directory}/licenses/system"
-    test -d "${runtime_directory}/system"
+    if [[ -d "${runtime_directory}/system" ]]; then
+      test -d "${runtime_directory}/licenses/system"
+    fi
 
     cyclonedx_paths+=("${cyclonedx}")
     about_paths+=("${about}")
-    metadata_paths+=("${metadata}")
   done
 
   predicate="${working_directory}/predicates/${bake_target}/extension-sbom.spdx.json"
@@ -70,14 +66,11 @@ for bake_target in "${bake_targets[@]}"; do
     --spdx "${predicate}"
     --output "${predicate}"
     --extension-name "${EXTENSION_NAME}"
-    --dockerfile "${EXTENSION_NAME}/Dockerfile"
-    --wrapper-revision "$(git rev-parse HEAD)"
   )
   for index in "${!platforms[@]}"; do
     compose_args+=(
       --cargo-cyclonedx "${cyclonedx_paths[$index]}"
       --cargo-about "${about_paths[$index]}"
-      --pgrx-metadata "${metadata_paths[$index]}"
       --platform "${platforms[$index]}"
     )
   done
