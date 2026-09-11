@@ -1,22 +1,36 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# Export builder-stage SBOMs per target and platform; the pushed image supplies
-# cached layers, and the final scratch stage is not scanned. Compose both
-# platform documents into one SPDX payload per image target. The aggregate is
-# attached to the multi-platform index by the actions/attest job below.
+# Export builder-stage SBOMs per target and selected platform; the pushed image
+# supplies cached layers, and the final scratch stage is not scanned. Compose
+# the platform documents into one SPDX payload per image target.
 export environment=testing
 export registry="${IMAGE_REGISTRY}"
 export revision="${GITHUB_SHA}"
 bake_file=docker-bake.hcl
-if [[ "${1:-}" == --bake-file ]]; then
-  bake_file="${2:?missing value for --bake-file}"
-  shift 2
-fi
-if (( $# != 0 )); then
-  echo "usage: $0 [--bake-file PATH]" >&2
-  exit 2
-fi
+distro=""
+platforms=(linux/amd64 linux/arm64)
+while (( $# )); do
+  case "$1" in
+    --bake-file)
+      bake_file="${2:?missing value for --bake-file}"
+      shift 2
+      ;;
+    --distro)
+      distro="${2:?missing value for --distro}"
+      shift 2
+      ;;
+    --platform)
+      platforms=("${2:?missing value for --platform}")
+      shift 2
+      ;;
+    *)
+      echo "usage: $0 [--bake-file PATH] [--platform PLATFORM]" >&2
+      exit 2
+      ;;
+  esac
+done
+export DISTRO="${distro}"
 working_directory="${RUNNER_TEMP}/extension-sbom"
 mkdir -p "${working_directory}/manifests" "${working_directory}/predicates" "${working_directory}/scans"
 bake_files=(-f "${bake_file}" -f "${EXTENSION_NAME}/metadata.hcl")
@@ -29,7 +43,6 @@ sed '1iARG BUILDKIT_SBOM_SCAN_STAGE=builder' "${EXTENSION_NAME}/Dockerfile" > "$
 mapfile -t bake_targets < <(jq -r '.target | keys[]' "${bake_definition}")
 test "${#bake_targets[@]}" -gt 0
 attestation_records=()
-platforms=(linux/amd64 linux/arm64)
 mapfile -t actions_attest_refs < <(
   sed -n 's/^[[:space:]]*uses:[[:space:]]*\(actions\/attest@[0-9a-f]\{40\}\).*/\1/p' \
     "${GITHUB_WORKSPACE}/.github/workflows/bake_targets.yml" | sort -u
@@ -70,11 +83,16 @@ for bake_target in "${bake_targets[@]}"; do
     scancode --license --license-references --json "${scancode_report}.chunks" "${license_scan_root}"
     jq '.files[] |= if .type == "file" then (.path |= sub("/license-[0-9]+$"; "") | (.license_detections[]?.matches[]?.from_file) |= sub("/license-[0-9]+$"; "")) else . end' "${scancode_report}.chunks" > "${scancode_report}" && rm "${scancode_report}.chunks"
 
-    image_manifest_digest=$(docker buildx imagetools inspect "${image}" --raw | \
-      jq -r --arg architecture "${platform#*/}" '
+    image_manifest_file="${output_directory}/image-manifest.json"
+    docker buildx imagetools inspect "${image}" --raw > "${image_manifest_file}"
+    if jq -e '(.manifests? | type) == "array"' "${image_manifest_file}" > /dev/null; then
+      image_manifest_digest=$(jq -r --arg architecture "${platform#*/}" '
         [.manifests[] |
          select(.platform.os == "linux" and .platform.architecture == $architecture) |
-         .digest] | first // empty')
+         .digest] | first // empty' "${image_manifest_file}")
+    else
+      image_manifest_digest=$(sha256sum "${image_manifest_file}" | awk '{print "sha256:" $1}')
+    fi
     test -n "${image_manifest_digest}" && test "${image_manifest_digest}" != "null"
 
     builder_sbom_paths+=("${builder_sbom}")
@@ -141,11 +159,12 @@ for bake_target in "${bake_targets[@]}"; do
 }
 EOF
   jq -e --arg namespace "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1" \
+    --argjson platform_count "${#platforms[@]}" \
     --arg index_digest "${image_index_digest}" \
     --arg actions_attest_ref "${actions_attest_ref}" \
     '.schemaVersion == $namespace and
-     (.inputs.builderSboms | length == 2) and
-     (.image.platforms | length == 2) and
+     (.inputs.builderSboms | length == $platform_count) and
+     (.image.platforms | length == $platform_count) and
      .image.indexDigest == $index_digest and
      .composer.toolVersions.actionsAttest == $actions_attest_ref' \
     "${provenance_manifest}"

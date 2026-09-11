@@ -15,6 +15,10 @@ variable "revision" {
   default = ""
 }
 
+variable "DISTRO" {
+  default = ""
+}
+
 fullname = ( environment == "testing") ? "${registry}/${metadata.image_name}-testing" : "${registry}/${metadata.image_name}"
 now = timestamp()
 authors = "The CNPG Extensions Contributors"
@@ -106,11 +110,11 @@ function getBuildName {
 function getBuildMatrix {
   params = []
   result = flatten([
-    for distro in keys(metadata.versions) : [
-      for pgVersion in keys(metadata.versions[distro]) : {
-        distro    = distro
+    for distroName in keys(metadata.versions) : [
+      for pgVersion in keys(metadata.versions[distroName]) : {
+        distro    = distroName
         pgVersion = pgVersion
-      }
+      } if DISTRO == "" || distroName == DISTRO
     ]
   ])
 }

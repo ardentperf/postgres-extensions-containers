@@ -128,6 +128,15 @@ def run_composer(documents, platforms=("linux/amd64", "linux/arm64"), *, scan_re
 
 
 class ComposeSbomTest(unittest.TestCase):
+    def test_aggregate_supports_single_platform(self):
+        document = builder_document([
+            {"name": "lib/ext.so", "digest": {"sha256": "extension"}},
+        ])
+        _, output, _ = run_composer([document], platforms=("linux/amd64",))
+
+        self.assertEqual(output["name"], "plr-multi-platform-sbom")
+        self.assertIn("extension", {item["name"] for item in output["packages"]})
+
     def test_aggregate_merges_platform_documents(self):
         amd64 = builder_document([
             {"name": "lib/ext.so", "digest": {"sha256": "extension"}},

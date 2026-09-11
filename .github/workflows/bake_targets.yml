@@ -12,6 +12,16 @@ on:
         required: false
         default: false
         type: boolean
+      platform:
+        description: "Optional target platform (for example, linux/amd64)"
+        required: false
+        default: ""
+        type: string
+      distro:
+        description: "Optional Debian distro (for example, bookworm)"
+        required: false
+        default: ""
+        type: string
     secrets:
       SNYK_TOKEN:
         required: false
@@ -67,22 +77,35 @@ jobs:
         with:
           platforms: 'linux/arm64'
 
-      - name: Set up Docker Buildx
+      - name: Set up Docker Buildx for local E2E
+        if: ${{ inputs.local }}
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
         with:
-          driver-opts: ${{ inputs.local && 'network=host' || '' }}
+          driver-opts: network=pg-extensions-e2e
+          buildkitd-config-inline: |
+            [registry."registry.pg-extensions:5000"]
+              http = true
+              insecure = true
+
+      - name: Set up Docker Buildx
+        if: ${{ !inputs.local }}
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
 
       - name: Build and push
         uses: docker/bake-action@d3418bd7d0e9324001bca92fa8ba175ea7e6dc9b # v7
         id: build
         env:
           BUILDX_METADATA_PROVENANCE: disabled
+          DOCKER_BUILD_RECORD_UPLOAD: ${{ inputs.local && 'false' || 'true' }}
+          DISTRO: ${{ inputs.distro }}
           environment: testing
-          registry: ${{ inputs.local && '127.0.0.1:5000' || format('ghcr.io/{0}', github.repository_owner) }}
+          registry: ${{ inputs.local && 'registry.pg-extensions:5000' || format('ghcr.io/{0}', github.repository_owner) }}
           revision: ${{ github.sha }}
         with:
+          source: ${{ inputs.local && '.' || '' }}
           files: ./docker-bake.hcl,./${{ inputs.extension_name }}/metadata.hcl
           push: true
+          set: ${{ inputs.platform && format('*.platform={0}', inputs.platform) || '' }}
 
       # From bake's metadata, extract each unique tag (e.g. the ones with the timestamp)
       - name: Generated images
@@ -90,7 +113,7 @@ jobs:
           BUILD_METADATA: ${{ steps.build.outputs.metadata }}
         id: images
         run: |
-          echo "images=$(jq -c '[ .[]."image.name" | split(",")[] | select(test("[0-9]{12}")) ]' <<< "$BUILD_METADATA")" >>  "$GITHUB_OUTPUT"
+          echo "images=$(jq -c --argjson local '${{ inputs.local }}' '[ .[]."image.name" | split(",")[] | select(test("[0-9]{12}")) ] | if $local then .[:1] else . end' <<< "$BUILD_METADATA")" >>  "$GITHUB_OUTPUT"
 
       - name: Install cosign
         if: ${{ !inputs.local }}
@@ -103,8 +126,18 @@ jobs:
         id: sbom
         env:
           EXTENSION_NAME: ${{ inputs.extension_name }}
-          IMAGE_REGISTRY: ${{ inputs.local && '127.0.0.1:5000' || format('ghcr.io/{0}', github.repository_owner) }}
-        run: ./scripts/compose_sboms.sh --bake-file docker-bake.hcl
+          IMAGE_REGISTRY: ${{ inputs.local && 'registry.pg-extensions:5000' || format('ghcr.io/{0}', github.repository_owner) }}
+          DISTRO_FILTER: ${{ inputs.distro }}
+          PLATFORM: ${{ inputs.platform }}
+        run: |
+          compose_args=(--bake-file docker-bake.hcl)
+          if [[ -n "${DISTRO_FILTER}" ]]; then
+            compose_args+=(--distro "${DISTRO_FILTER}")
+          fi
+          if [[ -n "${PLATFORM}" ]]; then
+            compose_args+=(--platform "${PLATFORM}")
+          fi
+          ./scripts/compose_sboms.sh "${compose_args[@]}"
 
       - name: Upload composed SBOMs
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -127,6 +160,7 @@ jobs:
 
   attest-sboms:
     name: Attest aggregate SBOM (${{ matrix.sbom.target }})
+    if: ${{ !inputs.local }}
     runs-on: ubuntu-24.04
     needs:
       - testbuild
@@ -166,6 +200,7 @@ jobs:
   security:
     name: Security checks
     runs-on: ubuntu-24.04
+    if: ${{ !inputs.local }}
     permissions:
       contents: read
       packages: read
@@ -258,7 +293,9 @@ jobs:
           MATRIX_IMAGE: ${{ matrix.image }}
           EXTENSION_NAME: ${{ inputs.extension_name }}
         run: |
-          task e2e:generate-values EXTENSION_IMAGE="${MATRIX_IMAGE}" TARGET="${EXTENSION_NAME}"
+          task e2e:generate-values \
+            REGISTRY_HOST_NAME="${{ inputs.local && 'registry.pg-extensions' || 'localhost' }}" \
+            EXTENSION_IMAGE="${MATRIX_IMAGE}" TARGET="${EXTENSION_NAME}"
 
       - name: Run e2e tests
         env:
@@ -271,7 +308,7 @@ jobs:
 
   copytoproduction:
     name: Copy images to production
-    if: ${{ github.ref == 'refs/heads/main' }}
+    if: ${{ github.ref == 'refs/heads/main' && !inputs.local }}
     runs-on: ubuntu-24.04
     needs:
       - testbuild
@@ -320,7 +357,7 @@ jobs:
 
   attest-production-sboms:
     name: Attest production aggregate SBOM (${{ matrix.sbom.target }})
-    if: ${{ github.ref == 'refs/heads/main' }}
+    if: ${{ github.ref == 'refs/heads/main' && !inputs.local }}
     runs-on: ubuntu-24.04
     needs:
       - copytoproduction

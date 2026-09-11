@@ -277,7 +277,8 @@ provisional with the rest of this beta SBOM implementation.
 
 ### Run the SBOM build locally with act
 
-The reusable `testbuild` job supports local execution with `act`. This assumes
+The reusable `testbuild` job supports local execution with `act`; these
+instructions have been tested on Linux. This assumes
 an OCI registry is available at `127.0.0.1:5000`; the local mode skips GHCR
 login and image signing while retaining the real multi-platform Buildx and
 SBOM composition steps. The artifact server keeps the generated SBOM files
