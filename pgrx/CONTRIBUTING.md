@@ -15,7 +15,8 @@ pg-example/
   README.md
 ```
 
-Copy the templates, then edit the Dockerfile directly. Keep the source archive,
+Run `task create-extension NAME=myextension BUILD_SYSTEM=pgrx` to scaffold the
+target, then edit the Dockerfile directly. Keep the source archive,
 Cargo package/manifest selection, native packages, matching cargo-pgrx version,
 and output normalization visible in that Dockerfile. The checked-in helper in
 `pgrx/` may own shared Rust/reporting setup when a Dockerfile downloads the
