@@ -9,7 +9,8 @@ export registry="${IMAGE_REGISTRY}"
 export revision="${GITHUB_SHA}"
 bake_file=docker-bake.hcl
 distro=""
-platforms=(linux/amd64 linux/arm64)
+platform_spec="${BUILD_PLATFORMS:-linux/amd64 linux/arm64}"
+read -r -a platforms <<< "${platform_spec}"
 while (( $# )); do
   case "$1" in
     --bake-file)
@@ -25,12 +26,23 @@ while (( $# )); do
       shift 2
       ;;
     *)
-      echo "usage: $0 [--bake-file PATH] [--platform PLATFORM]" >&2
+      echo "usage: $0 [--bake-file PATH] [--distro DISTRO] [--platform PLATFORM]" >&2
       exit 2
       ;;
   esac
 done
 export DISTRO="${distro}"
+test "${#platforms[@]}" -gt 0
+for platform in "${platforms[@]}"; do
+  case "${platform}" in
+    linux/amd64|linux/arm64) ;;
+    *)
+      echo "unsupported build platform: ${platform}" >&2
+      exit 2
+      ;;
+  esac
+done
+
 working_directory="${RUNNER_TEMP}/extension-sbom"
 mkdir -p "${working_directory}/manifests" "${working_directory}/predicates" "${working_directory}/scans"
 bake_files=(-f "${bake_file}" -f "${EXTENSION_NAME}/metadata.hcl")
@@ -54,6 +66,17 @@ for bake_target in "${bake_targets[@]}"; do
   image=$(jq -r --arg target "${bake_target}" '.target[$target].tags[0]' "${bake_definition}")
   test -n "${image}" && test "${image}" != "null"
 
+  # The historical Debian Bake context is the target directory, while the
+  # pgrx Bake context is the repository root so it can COPY shared pgrx policy.
+  # Keep this override context-neutral; the shared composer remains unaware of
+  # the build system.
+  build_context=$(jq -r --arg target "${bake_target}" '.target[$target].context' "${bake_definition}")
+  if [[ "${build_context}" == "." || "${build_context}" == "./" ]]; then
+    sbom_dockerfile="${EXTENSION_NAME}/.sbom.Dockerfile"
+  else
+    sbom_dockerfile=".sbom.Dockerfile"
+  fi
+
   builder_sbom_records=()
   builder_sbom_paths=()
   scancode_report_paths=()
@@ -66,7 +89,7 @@ for bake_target in "${bake_targets[@]}"; do
     # local SBOM generation and export work.
     docker buildx bake "${bake_files[@]}" "${bake_target}" \
       --set "*.platform=${platform}" \
-      --set "*.dockerfile=.sbom.Dockerfile" \
+      --set "${bake_target}.dockerfile=${sbom_dockerfile}" \
       --set "*.output=type=local,dest=${output_directory}" \
       --set "*.attest=type=sbom" \
       --progress plain
@@ -81,7 +104,7 @@ for bake_target in "${bake_targets[@]}"; do
       csplit -s -z -f "${chunk_directory}/license-" "${license_file}" '/^License:/' '{*}' >/dev/null
     done
     scancode --license --license-references --json "${scancode_report}.chunks" "${license_scan_root}"
-    jq '.files[] |= if .type == "file" then (.path |= sub("/license-[0-9]+$"; "") | (.license_detections[]?.matches[]?.from_file) |= sub("/license-[0-9]+$"; "")) else . end' "${scancode_report}.chunks" > "${scancode_report}" && rm "${scancode_report}.chunks"
+    jq '.files[] |= if .type == "file" then (.path |= sub("/license-[0-9]+$"; "") | (.license_detections[]?.matches[]?.from_file) |= sub("/license-[0-9]+$"; "")) else . end' "${scancode_report}.chunks" > "${scancode_report}" && rm -f "${scancode_report}.chunks"
 
     image_manifest_file="${output_directory}/image-manifest.json"
     docker buildx imagetools inspect "${image}" --raw > "${image_manifest_file}"
