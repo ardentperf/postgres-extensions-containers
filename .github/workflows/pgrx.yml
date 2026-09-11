@@ -18,6 +18,11 @@ on:
         required: false
         default: ""
         type: string
+      distro:
+        description: "Single Debian distro for local validation (bookworm or trixie); leave empty for both"
+        required: false
+        default: ""
+        type: string
 
 defaults:
   run:
@@ -57,6 +62,7 @@ jobs:
           INPUT_EXTENSION_NAME: ${{ github.event.inputs.extension_name }}
           INPUT_LOCAL: ${{ github.event.inputs.local }}
           INPUT_PLATFORM: ${{ github.event.inputs.platform }}
+          INPUT_DISTRO: ${{ github.event.inputs.distro }}
           VALID_TARGETS: ${{ steps.get-targets.outputs.output }}
         run: |
           if ! echo "$VALID_TARGETS" | jq -e --arg ext "$INPUT_EXTENSION_NAME" 'index($ext)' >/dev/null; then
@@ -70,8 +76,15 @@ jobs:
               exit 1
               ;;
           esac
-          if [[ -n "$INPUT_PLATFORM" && "$INPUT_LOCAL" != true ]]; then
-            echo "::error::platform overrides are only allowed for local validation"
+          case "$INPUT_DISTRO" in
+            ""|bookworm|trixie) ;;
+            *)
+              echo "::error::distro must be bookworm, trixie, or empty"
+              exit 1
+              ;;
+          esac
+          if [[ ( -n "$INPUT_PLATFORM" || -n "$INPUT_DISTRO" ) && "$INPUT_LOCAL" != true ]]; then
+            echo "::error::platform and distro overrides are only allowed for local validation"
             exit 1
           fi
 
@@ -133,6 +146,7 @@ jobs:
       extension_name: ${{ matrix.extension }}
       local: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.local == 'true' }}
       platform: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.platform || '' }}
+      distro: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.distro || '' }}
     secrets:
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 

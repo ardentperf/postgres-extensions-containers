@@ -1,17 +1,29 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# Run the neutral PR 61 filesystem/ScanCode composition first. The alternate
-# Bake file is the only build-system input the shared wrapper needs.
-./scripts/compose_sboms.sh --bake-file docker-bake-pgrx.hcl
-
-working_directory="${RUNNER_TEMP}/extension-sbom"
-bake_definition="${working_directory}/bake.json"
-mapfile -t bake_targets < <(jq -r '.target | keys[]' "${bake_definition}")
-test "${#bake_targets[@]}" -gt 0
-
+distro="${DISTRO:-}"
 platform_spec="${BUILD_PLATFORMS:-linux/amd64 linux/arm64}"
 read -r -a platforms <<< "${platform_spec}"
+platform_override=false
+while (( $# )); do
+  case "$1" in
+    --distro)
+      distro="${2:?missing value for --distro}"
+      shift 2
+      ;;
+    --platform)
+      platforms=("${2:?missing value for --platform}")
+      platform_override=true
+      shift 2
+      ;;
+    *)
+      echo "usage: $0 [--distro DISTRO] [--platform PLATFORM]" >&2
+      exit 2
+      ;;
+  esac
+done
+export DISTRO="${distro}"
+
 test "${#platforms[@]}" -gt 0
 for platform in "${platforms[@]}"; do
   case "${platform}" in
@@ -22,6 +34,22 @@ for platform in "${platforms[@]}"; do
       ;;
   esac
 done
+
+# Run the neutral PR 61 filesystem/ScanCode composition first. The alternate
+# Bake file is the only build-system input the shared wrapper needs.
+compose_args=(--bake-file docker-bake-pgrx.hcl)
+if [[ -n "${distro}" ]]; then
+  compose_args+=(--distro "${distro}")
+fi
+if [[ "${platform_override}" == true ]]; then
+  compose_args+=(--platform "${platforms[0]}")
+fi
+./scripts/compose_sboms.sh "${compose_args[@]}"
+
+working_directory="${RUNNER_TEMP}/extension-sbom"
+bake_definition="${working_directory}/bake.json"
+mapfile -t bake_targets < <(jq -r '.target | keys[]' "${bake_definition}")
+test "${#bake_targets[@]}" -gt 0
 
 for bake_target in "${bake_targets[@]}"; do
   cyclonedx_paths=()
