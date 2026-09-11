@@ -202,9 +202,11 @@ func (m *Maintenance) GenerateTestingValues(
 		return nil, err
 	}
 
-	extensions := make([]*ExtensionConfiguration, len(extensionInfos))
-	for i, info := range extensionInfos {
-		extensions[i] = info.Configuration
+	extensions := make([]*ExtensionConfiguration, 0, len(extensionInfos))
+	for _, info := range extensionInfos {
+		if info.Configuration != nil {
+			extensions = append(extensions, info.Configuration)
+		}
 	}
 
 	databaseConfig := generateDatabaseConfig(extensionInfos)

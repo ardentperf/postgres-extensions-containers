@@ -34,17 +34,25 @@ project due to licensing constraints, but are otherwise fully compatible with
 | **[age](age)** | Apache AGE graph database extension (Cypher queries) | [github.com/apache/age](https://github.com/apache/age) | @ardentperf | libcsv (LGPL-2.1+) |
 | **[debversion](debversion)** | Debian package version comparison type | [salsa.debian.org/postgresql/postgresql-debversion](https://salsa.debian.org/postgresql/postgresql-debversion) | @ardentperf | GPL-3+ |
 | **[h3](h3)** | Uber H3 hexagonal geospatial indexing | [github.com/zachasme/h3-pg](https://github.com/zachasme/h3-pg) | @ardentperf | libh3-1 (Apache-2.0 + AGPL-3+ test deps) |
+| **[hypopg](hypopg)** | Hypothetical index support | [github.com/HypoPG/hypopg](https://github.com/HypoPG/hypopg) | @ardentperf | PostgreSQL License |
 | **[mobilitydb](mobilitydb)** | Spatio-temporal moving objects database | [mobilitydb.com](https://mobilitydb.com/) | @ardentperf | GPL-2+, GPL-3+ |
 | **[mysql-fdw](mysql-fdw)** | MySQL/MariaDB foreign data wrapper | [github.com/EnterpriseDB/mysql_fdw](https://github.com/EnterpriseDB/mysql_fdw) | @ardentperf | libmariadb3 (LGPL-2.1) |
 | **[pg-cron](pg-cron)** | Cron-based job scheduler for PostgreSQL | [github.com/citusdata/pg_cron](https://github.com/citusdata/pg_cron) | @ardentperf | Vixie-Cron (src/entry.c, src/misc.c) |
+| **[pg-hint-plan](pg-hint-plan)** | Query optimizer hints in SQL comments | [github.com/ossc-db/pg_hint_plan](https://github.com/ossc-db/pg_hint_plan) | @ardentperf | NTT |
+| **[pg-partman](pg-partman)** | Time- and ID-based partition management | [github.com/pgpartman/pg_partman](https://github.com/pgpartman/pg_partman) | @ardentperf | PostgreSQL License |
+| **[pg-qualstats](pg-qualstats)** | Predicate and missing-index statistics | [github.com/powa-team/pg_qualstats](https://github.com/powa-team/pg_qualstats) | @ardentperf | PostgreSQL License |
 | **[pg-rrule](pg-rrule)** | iCalendar RRULE recurrence rule type | [github.com/petropavel13/pg_rrule](https://github.com/petropavel13/pg_rrule) | @ardentperf | libical3 (LGPL-2.1/MPL-2.0) |
+| **[pg-squash](pg-squash)** | Online table bloat cleanup (pg_squeeze) | [github.com/cybertec-postgresql/pg_squeeze](https://github.com/cybertec-postgresql/pg_squeeze) | @ardentperf | PostgreSQL License |
+| **[pg-stat-kcache](pg-stat-kcache)** | Per-query kernel and filesystem statistics | [github.com/powa-team/pg_stat_kcache](https://github.com/powa-team/pg_stat_kcache) | @ardentperf | PostgreSQL License |
 | **[pg-uuidv7](pg-uuidv7)** | UUID version 7 (time-sortable) generator | [github.com/fboulnois/pg_uuidv7](https://github.com/fboulnois/pg_uuidv7) | @ardentperf | MPL-2.0 |
 | **[pgagent](pgagent)** | PostgreSQL job scheduler (pgAdmin component) | [pgadmin.org](https://www.pgadmin.org/docs/pgadmin4/latest/pgagent.html) | @ardentperf | Boost libraries (BSL-1.0) |
 | **[pgmemcache](pgmemcache)** | Memcached client interface for PostgreSQL | [github.com/ohmu/pgmemcache](https://github.com/ohmu/pgmemcache) | @ardentperf | libmemcached11 (LGPL) |
 | **[pgmp](pgmp)** | GMP arbitrary-precision arithmetic types | [github.com/dvarrazzo/pgmp](https://github.com/dvarrazzo/pgmp) | @ardentperf | LGPL-3+ |
+| **[pgsentinel](pgsentinel)** | Active session history sampler | [github.com/pgsentinel/pgsentinel](https://github.com/pgsentinel/pgsentinel) | @ardentperf | PgSentinel PostgreSQL-style license |
 | **[pgsphere](pgsphere)** | Spherical geometry for astronomical data | [pgsphere.github.io](https://pgsphere.github.io/) | @ardentperf | GPL-3+ |
 | **[pldebugger](pldebugger)** | PL/pgSQL interactive debugger (pldbgapi) | [github.com/EnterpriseDB/pldebugger](https://github.com/EnterpriseDB/pldebugger) | @ardentperf | Artistic-2.0 |
 | **[plprofiler](plprofiler)** | PL/pgSQL execution profiler | [github.com/bigsql/plprofiler](https://github.com/bigsql/plprofiler) | @ardentperf | Artistic-2.0 |
+| **[plpgsql-check](plpgsql-check)** | PL/pgSQL linter and static checker | [github.com/okbob/plpgsql_check](https://github.com/okbob/plpgsql_check) | @ardentperf | MIT |
 | **[plr](plr)** | R procedural language for PostgreSQL | [joeconway.com/plr](https://www.joeconway.com/plr/) | @ardentperf | GPL-2+ |
 | **[q3c](q3c)** | Quad Tree Cube sky survey spatial indexing | [github.com/segasai/q3c](https://github.com/segasai/q3c) | @ardentperf | GPL-2+ |
 | **[snakeoil](snakeoil)** | ClamAV antivirus scanning for PostgreSQL | [github.com/credativ/pg_snakeoil](https://github.com/credativ/pg_snakeoil) | @ardentperf | libclamav12 (LGPL-2+) |

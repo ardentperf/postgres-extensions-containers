@@ -71,7 +71,8 @@ func generateTestingValuesExtensions(
 		}
 		if !depExists {
 			out = append(out, &testingExtensionInfo{
-				Configuration:   &ExtensionConfiguration{Name: dep},
+				// A dependency that is not another repository target is
+				// expected to be provided by the PostgreSQL base image.
 				SQLName:         dep,
 				CreateExtension: true,
 			})
