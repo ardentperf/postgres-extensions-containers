@@ -65,7 +65,7 @@ for bake_target in "${bake_targets[@]}"; do
     # local SBOM generation and export work.
     docker buildx bake "${bake_files[@]}" "${bake_target}" \
       --set "*.platform=${platform}" \
-      --set "*.dockerfile=.sbom.Dockerfile" \
+      --set "*.dockerfile=${EXTENSION_NAME}/.sbom.Dockerfile" \
       --set "*.output=type=local,dest=${output_directory}" \
       --set "*.attest=type=sbom" \
       --progress plain

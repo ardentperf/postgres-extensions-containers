@@ -9,32 +9,14 @@ ARG EXT_VERSION
 
 USER 0
 
+COPY scripts/stage_system_libs.sh /usr/local/bin/stage_system_libs.sh
+
 RUN set -eux && \
 	ldconfig -p | awk '{print $NF}' | grep '^/' | sort | uniq > /tmp/base-image-libs.out && \
 	apt-get update && \
 	apt-get install -y --no-install-recommends "postgresql-${PG_MAJOR}-pgmp=${EXT_VERSION}"
 
-RUN mkdir -p /system /licenses && \
-	ldd /usr/lib/postgresql/${PG_MAJOR}/lib/pgmp.so \
-		| awk '{print $3}' | grep '^/' | sort | uniq > /tmp/all-deps.out && \
-	comm -13 /tmp/base-image-libs.out /tmp/all-deps.out > /tmp/libraries.out && \
-	while read -r lib; do \
-		resolved=$(readlink -f "$lib"); \
-		dir=$(dirname "$lib"); \
-		base=$(basename "$lib"); \
-		cp -a "$resolved" /system/; \
-		for file in "$dir"/"${base%.so*}.so"*; do \
-			[ -e "$file" ] || continue; \
-			if [ -L "$file" ] && [ "$(readlink -f "$file")" = "$resolved" ]; then \
-				ln -sf "$(basename "$resolved")" "/system/$(basename "$file")"; \
-			fi; \
-		done; \
-	done < /tmp/libraries.out && \
-	for lib in $(find /system -maxdepth 1 -type f -name '*.so*'); do \
-		pkg=$(dpkg -S "$(basename "$lib")" | grep -v "diversion by" | awk -F: '/:/{print $1; exit}'); \
-		[ -z "$pkg" ] && continue; \
-		mkdir -p "/licenses/$pkg" && cp -a "/usr/share/doc/$pkg/copyright" "/licenses/$pkg/copyright"; \
-	done
+RUN /usr/local/bin/stage_system_libs.sh /usr/lib/postgresql/${PG_MAJOR}/lib/pgmp.so
 
 FROM scratch
 ARG PG_MAJOR
