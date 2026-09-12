@@ -12,8 +12,9 @@ type mixedTargetFixture struct {
 		Name        string `json:"name"`
 		BuildSystem string `json:"build_system"`
 	} `json:"targets"`
-	DebianTargets []string `json:"debian_targets"`
-	PgrxTargets   []string `json:"pgrx_targets"`
+	DebianTargets   []string `json:"debian_targets"`
+	PgrxTargets     []string `json:"pgrx_targets"`
+	PgDuckdbTargets []string `json:"pg_duckdb_targets"`
 }
 
 func TestEffectiveBuildSystem(t *testing.T) {
@@ -26,6 +27,7 @@ func TestEffectiveBuildSystem(t *testing.T) {
 		{name: "omitted means Debian", metadata: extensionMetadata{Name: "legacy"}, wantSystem: debianBuildSystem},
 		{name: "explicit Debian", metadata: extensionMetadata{Name: "debian", BuildSystem: debianBuildSystem}, wantSystem: debianBuildSystem},
 		{name: "pgrx", metadata: extensionMetadata{Name: "pg-jsonschema", BuildSystem: pgrxBuildSystem}, wantSystem: pgrxBuildSystem},
+		{name: "pg-duckdb", metadata: extensionMetadata{Name: "pg-duckdb", BuildSystem: pgDuckdbBuildSystem}, wantSystem: pgDuckdbBuildSystem},
 		{name: "unknown", metadata: extensionMetadata{Name: "bad", BuildSystem: "unknown"}, wantErr: true},
 	}
 
@@ -61,6 +63,7 @@ func TestMixedTargetRoutingFixture(t *testing.T) {
 
 	debianTargets := make([]string, 0, len(fixture.Targets))
 	pgrxTargets := make([]string, 0, len(fixture.Targets))
+	pgDuckdbTargets := make([]string, 0, len(fixture.Targets))
 	for _, target := range fixture.Targets {
 		buildSystem, err := effectiveBuildSystem(&extensionMetadata{
 			Name:        target.Name,
@@ -74,6 +77,8 @@ func TestMixedTargetRoutingFixture(t *testing.T) {
 			debianTargets = append(debianTargets, target.Name)
 		case pgrxBuildSystem:
 			pgrxTargets = append(pgrxTargets, target.Name)
+		case pgDuckdbBuildSystem:
+			pgDuckdbTargets = append(pgDuckdbTargets, target.Name)
 		}
 	}
 
@@ -82,6 +87,9 @@ func TestMixedTargetRoutingFixture(t *testing.T) {
 	}
 	if !slices.Equal(pgrxTargets, fixture.PgrxTargets) {
 		t.Fatalf("pgrx targets: got %v, want %v", pgrxTargets, fixture.PgrxTargets)
+	}
+	if !slices.Equal(pgDuckdbTargets, fixture.PgDuckdbTargets) {
+		t.Fatalf("pg-duckdb targets: got %v, want %v", pgDuckdbTargets, fixture.PgDuckdbTargets)
 	}
 }
 

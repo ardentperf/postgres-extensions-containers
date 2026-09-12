@@ -1,0 +1,323 @@
+{
+  "schemaVersion": "https://github.com/cnpg-extensions/postgres-extensions-containers/pg-duckdb-dependencies/v1",
+  "extension": {
+    "name": "pg_duckdb",
+    "repository": "https://github.com/duckdb/pg_duckdb",
+    "tag": "v1.1.1",
+    "commit": "7b0db3737a1ab2dfb182b742322426e3c4b500af",
+    "sqlVersion": "1.1.0"
+  },
+  "policies": {
+    "requiredRoots": ["src", "include", "third_party"],
+    "allowedClassifications": [
+      "compiled source",
+      "used headers",
+      "runtime shared library",
+      "build/test-only",
+      "unused source",
+      "optional runtime download"
+    ]
+  },
+  "recipes": [
+    {
+      "id": "pg_duckdb",
+      "identity": "github.com/duckdb/pg_duckdb",
+      "repository": "https://github.com/duckdb/pg_duckdb",
+      "sourceRoot": ".",
+      "parent": null,
+      "releaseVersion": {
+        "path": "pg_duckdb.control",
+        "pattern": "default_version\\s*=\\s*'(?P<version>[0-9.]+)'"
+      },
+      "sourceTag": "v1.1.1",
+      "revision": "7b0db3737a1ab2dfb182b742322426e3c4b500af",
+      "licensePaths": ["LICENSE", "NOTICE"],
+      "licenseExpression": "MIT",
+      "classification": "compiled source",
+      "target": "pg_duckdb",
+      "required": true
+    },
+    {
+      "id": "duckdb",
+      "identity": "github.com/duckdb/duckdb",
+      "repository": "https://github.com/duckdb/duckdb",
+      "sourceRoot": "third_party/duckdb",
+      "parent": "pg_duckdb",
+      "releaseVersion": {
+        "paths": ["Makefile", "../../Makefile"],
+        "pattern": "DUCKDB_VERSION(?:_NUMBER)?\\s*[?:]?=\\s*(?P<version>v?[0-9]+\\.[0-9]+\\.[0-9]+)"
+      },
+      "revision": "d1dc88f950d456d72493df452dabdcd13aa413dd",
+      "licensePaths": ["LICENSE"],
+      "licenseExpression": "MIT",
+      "classification": "compiled source",
+      "target": "bundle-library",
+      "required": true
+    },
+    {
+      "id": "duckdb-json",
+      "identity": "github.com/duckdb/duckdb/extension/json",
+      "repository": "https://github.com/duckdb/duckdb",
+      "sourceRoot": "third_party/duckdb/extension/json",
+      "parent": "duckdb",
+      "licensePaths": ["../../LICENSE"],
+      "licenseExpression": "MIT",
+      "classification": "compiled source",
+      "target": "json",
+      "extensionName": "json",
+      "required": true,
+      "allowSnapshot": true
+    },
+    {
+      "id": "duckdb-core-functions",
+      "identity": "github.com/duckdb/duckdb/extension/core_functions",
+      "repository": "https://github.com/duckdb/duckdb",
+      "sourceRoot": "third_party/duckdb/extension/core_functions",
+      "parent": "duckdb",
+      "licensePaths": ["../../LICENSE"],
+      "licenseExpression": "MIT",
+      "classification": "compiled source",
+      "target": "core_functions",
+      "extensionName": "core_functions",
+      "required": true,
+      "allowSnapshot": true
+    },
+    {
+      "id": "duckdb-parquet",
+      "identity": "github.com/duckdb/duckdb/extension/parquet",
+      "repository": "https://github.com/duckdb/duckdb",
+      "sourceRoot": "third_party/duckdb/extension/parquet",
+      "parent": "duckdb",
+      "licensePaths": ["../../LICENSE", "../../third_party/parquet/LICENSE"],
+      "licenseExpression": "NOASSERTION",
+      "classification": "compiled source",
+      "target": "parquet",
+      "extensionName": "parquet",
+      "required": true,
+      "allowSnapshot": true
+    },
+    {
+      "id": "duckdb-jemalloc",
+      "identity": "github.com/duckdb/duckdb/extension/jemalloc",
+      "repository": "https://github.com/duckdb/duckdb",
+      "sourceRoot": "third_party/duckdb/extension/jemalloc",
+      "parent": "duckdb",
+      "licensePaths": ["../../LICENSE", "jemalloc/LICENSE"],
+      "licenseExpression": "NOASSERTION",
+      "classification": "compiled source",
+      "target": "jemalloc",
+      "extensionName": "jemalloc",
+      "required": true,
+      "allowSnapshot": true
+    },
+    {
+      "id": "duckdb-icu",
+      "identity": "github.com/duckdb/duckdb/extension/icu",
+      "repository": "https://github.com/duckdb/duckdb",
+      "sourceRoot": "third_party/duckdb/extension/icu",
+      "parent": "duckdb",
+      "licensePaths": ["../../LICENSE", "third_party/icu/LICENSE"],
+      "licenseExpression": "Unicode-3.0",
+      "classification": "compiled source",
+      "target": "icu",
+      "extensionName": "icu",
+      "required": true,
+      "allowSnapshot": true
+    },
+    {
+      "id": "duckdb-httpfs",
+      "identity": "github.com/duckdb/duckdb-httpfs",
+      "repository": "https://github.com/duckdb/duckdb-httpfs",
+      "sourceRoot": "third_party/duckdb/build/release/_deps/httpfs_extension_fc-src",
+      "sourceRootAlternatives": [
+        "third_party/duckdb/extension_external/httpfs",
+        "third_party/duckdb/extension/httpfs",
+        "third_party/duckdb/build/release/extension/httpfs",
+        "third_party/duckdb/build/release/extension/httpfs/extension"
+      ],
+      "parent": "duckdb",
+      "revision": "9c7d34977b10346d0b4cbbde5df807d1dab0b2bf",
+      "licensePaths": ["LICENSE"],
+      "licenseExpression": "MIT",
+      "classification": "compiled source",
+      "target": "httpfs",
+      "extensionName": "httpfs",
+      "required": true,
+      "download": {
+        "url": "https://github.com/duckdb/duckdb-httpfs",
+        "revision": "9c7d34977b10346d0b4cbbde5df807d1dab0b2bf"
+      }
+    },
+    {
+      "id": "duckdb-yyjson",
+      "identity": "github.com/ibireme/yyjson",
+      "repository": "https://github.com/ibireme/yyjson",
+      "sourceRoot": "third_party/duckdb/third_party/yyjson",
+      "parent": "duckdb-json",
+      "licensePaths": ["LICENSE"],
+      "licenseExpression": "MIT",
+      "classification": "used headers",
+      "target": "json",
+      "required": true,
+      "allowSnapshot": true
+    },
+    {
+      "id": "duckdb-lz4",
+      "identity": "github.com/lz4/lz4",
+      "repository": "https://github.com/lz4/lz4",
+      "sourceRoot": "third_party/duckdb/third_party/lz4",
+      "parent": "duckdb",
+      "licensePaths": ["LICENSE"],
+      "licenseExpression": "BSD-2-Clause",
+      "classification": "compiled source",
+      "target": "bundle-library",
+      "required": true,
+      "allowSnapshot": true
+    },
+    {
+      "id": "duckdb-zstd",
+      "identity": "github.com/facebook/zstd",
+      "repository": "https://github.com/facebook/zstd",
+      "sourceRoot": "third_party/duckdb/third_party/zstd",
+      "parent": "duckdb",
+      "licensePaths": ["LICENSE"],
+      "licenseExpression": "BSD-3-Clause",
+      "classification": "compiled source",
+      "target": "bundle-library",
+      "required": true,
+      "allowSnapshot": true
+    },
+    {
+      "id": "duckdb-mbedtls",
+      "identity": "github.com/Mbed-TLS/mbedtls",
+      "repository": "https://github.com/Mbed-TLS/mbedtls",
+      "sourceRoot": "third_party/duckdb/third_party/mbedtls",
+      "parent": "duckdb",
+      "licensePaths": ["LICENSE"],
+      "licenseExpression": "Apache-2.0",
+      "classification": "compiled source",
+      "target": "httpfs",
+      "required": true,
+      "allowSnapshot": true
+    },
+    {
+      "id": "duckdb-re2",
+      "identity": "github.com/google/re2",
+      "repository": "https://github.com/google/re2",
+      "sourceRoot": "third_party/duckdb/third_party/re2",
+      "parent": "duckdb",
+      "licensePaths": ["LICENSE"],
+      "licenseExpression": "BSD-3-Clause",
+      "classification": "used headers",
+      "target": "bundle-library",
+      "required": true,
+      "allowSnapshot": true
+    },
+    {
+      "id": "pgduckdb-postgresql-imports",
+      "identity": "github.com/duckdb/pg_duckdb/imported-postgresql",
+      "repository": "https://github.com/duckdb/pg_duckdb",
+      "sourceRoot": "src/vendor",
+      "parent": "pg_duckdb",
+      "revision": "7b0db3737a1ab2dfb182b742322426e3c4b500af",
+      "licensePaths": ["../../NOTICE"],
+      "licenseExpression": "PostgreSQL",
+      "classification": "compiled source",
+      "target": "pg_duckdb",
+      "required": true
+    },
+    {
+      "id": "duckdb-fmt",
+      "identity": "github.com/fmtlib/fmt",
+      "repository": "https://github.com/fmtlib/fmt",
+      "sourceRoot": "third_party/duckdb/third_party/fmt",
+      "parent": "duckdb",
+      "licensePaths": ["LICENSE"],
+      "licenseExpression": "MIT",
+      "classification": "compiled source",
+      "target": "bundle-library",
+      "required": true,
+      "allowSnapshot": true
+    },
+    {
+      "id": "duckdb-libpg-query",
+      "identity": "github.com/pganalyze/libpg_query",
+      "repository": "https://github.com/pganalyze/libpg_query",
+      "sourceRoot": "third_party/duckdb/third_party/libpg_query",
+      "parent": "duckdb",
+      "licensePaths": ["LICENSE"],
+      "licenseExpression": "BSD-3-Clause",
+      "classification": "compiled source",
+      "target": "bundle-library",
+      "required": true,
+      "allowSnapshot": true
+    },
+    {
+      "id": "duckdb-miniz",
+      "identity": "github.com/richgel999/miniz",
+      "repository": "https://github.com/richgel999/miniz",
+      "sourceRoot": "third_party/duckdb/third_party/miniz",
+      "parent": "duckdb",
+      "licensePaths": ["LICENSE"],
+      "licenseExpression": "MIT",
+      "classification": "compiled source",
+      "target": "bundle-library",
+      "required": true,
+      "allowSnapshot": true
+    },
+    {
+      "id": "duckdb-utf8proc",
+      "identity": "github.com/JuliaStrings/utf8proc",
+      "repository": "https://github.com/JuliaStrings/utf8proc",
+      "sourceRoot": "third_party/duckdb/third_party/utf8proc",
+      "parent": "duckdb",
+      "licensePaths": ["LICENSE"],
+      "licenseExpression": "MIT",
+      "classification": "compiled source",
+      "target": "bundle-library",
+      "required": true,
+      "allowSnapshot": true
+    },
+    {
+      "id": "duckdb-fsst",
+      "identity": "github.com/cwida/fsst",
+      "repository": "https://github.com/cwida/fsst",
+      "sourceRoot": "third_party/duckdb/third_party/fsst",
+      "parent": "duckdb",
+      "licensePaths": ["LICENSE"],
+      "licenseExpression": "MIT",
+      "classification": "compiled source",
+      "target": "bundle-library",
+      "required": true,
+      "allowSnapshot": true
+    },
+    {
+      "id": "duckdb-fastpforlib",
+      "identity": "github.com/lemire/FastPFor",
+      "repository": "https://github.com/lemire/FastPFor",
+      "sourceRoot": "third_party/duckdb/third_party/fastpforlib",
+      "parent": "duckdb",
+      "licensePaths": ["LICENSE"],
+      "licenseExpression": "Apache-2.0",
+      "classification": "compiled source",
+      "target": "bundle-library",
+      "required": true,
+      "allowSnapshot": true
+    }
+  ],
+  "vendorDefaults": {
+    "root": "third_party/duckdb/third_party",
+    "classification": "used headers",
+    "parent": "duckdb",
+    "allowSnapshot": true,
+    "licenseNames": ["LICENSE", "COPYING", "NOTICE"]
+  },
+  "downloads": [
+    {
+      "identity": "github.com/duckdb/duckdb-httpfs",
+      "url": "https://github.com/duckdb/duckdb-httpfs",
+      "revision": "9c7d34977b10346d0b4cbbde5df807d1dab0b2bf",
+      "recipe": "duckdb-httpfs"
+    }
+  ]
+}

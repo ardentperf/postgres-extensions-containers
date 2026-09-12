@@ -1,10 +1,10 @@
-name: Build, test and publish a pgrx target
+name: Build, test and publish a native target
 
 on:
   workflow_call:
     inputs:
       extension_name:
-        description: "The pgrx extension to build"
+        description: "The extension target to build"
         required: true
         type: string
       local:
@@ -21,6 +21,16 @@ on:
         description: "Optional Debian distro for local validation (for example, trixie)"
         required: false
         default: ""
+        type: string
+      bake_file:
+        description: "Bake definition for the target"
+        required: false
+        default: "docker-bake-pgrx.hcl"
+        type: string
+      compose_script:
+        description: "Target-local SBOM composition entry point"
+        required: false
+        default: "./pgrx/compose_sboms.sh"
         type: string
     secrets:
       SNYK_TOKEN:
@@ -90,7 +100,7 @@ jobs:
         if: ${{ !inputs.local }}
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
 
-      - name: Build and push pgrx image
+      - name: Build and push extension image
         uses: docker/bake-action@d3418bd7d0e9324001bca92fa8ba175ea7e6dc9b # v7
         id: build
         env:
@@ -101,7 +111,7 @@ jobs:
           registry: ${{ inputs.local && 'registry.pg-extensions:5000' || format('ghcr.io/{0}', github.repository_owner) }}
           revision: ${{ github.sha }}
         with:
-          files: ./docker-bake-pgrx.hcl,./${{ inputs.extension_name }}/metadata.hcl
+          files: ./${{ inputs.bake_file }},./${{ inputs.extension_name }}/metadata.hcl
           source: ${{ inputs.local && '.' || '' }}
           set: |
             ${{ inputs.platform != '' && format('*.platform={0}', inputs.platform) || '' }}
@@ -113,7 +123,7 @@ jobs:
         id: images
         run: echo "images=$(jq -c --argjson local '${{ inputs.local }}' '[ .[]."image.name" | split(",")[] | select(test("[0-9]{12}")) ] | if $local then .[:1] else . end' <<< "$BUILD_METADATA")" >> "$GITHUB_OUTPUT"
 
-      - name: Compose filesystem and Cargo SPDX
+      - name: Compose filesystem and target SPDX
         id: sbom
         env:
           EXTENSION_NAME: ${{ inputs.extension_name }}
@@ -121,15 +131,7 @@ jobs:
           DISTRO_FILTER: ${{ inputs.distro }}
           PLATFORM: ${{ inputs.platform }}
           BUILD_PLATFORMS: ${{ inputs.platform != '' && inputs.platform || 'linux/amd64 linux/arm64' }}
-        run: |
-          compose_args=()
-          if [[ -n "${DISTRO_FILTER}" ]]; then
-            compose_args+=(--distro "${DISTRO_FILTER}")
-          fi
-          if [[ -n "${PLATFORM}" ]]; then
-            compose_args+=(--platform "${PLATFORM}")
-          fi
-          ./pgrx/compose_sboms.sh "${compose_args[@]}"
+        run: ${{ inputs.compose_script }}
 
       - name: Run local Trivy against every aggregate predicate
         if: ${{ inputs.local }}

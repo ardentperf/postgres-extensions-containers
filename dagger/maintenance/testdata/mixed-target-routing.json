@@ -2,8 +2,10 @@
   "targets": [
     {"name": "legacy", "build_system": ""},
     {"name": "debian", "build_system": "debian"},
-    {"name": "pgrx", "build_system": "pgrx"}
+    {"name": "pgrx", "build_system": "pgrx"},
+    {"name": "pg-duckdb", "build_system": "pg-duckdb"}
   ],
   "debian_targets": ["legacy", "debian"],
-  "pgrx_targets": ["pgrx"]
+  "pgrx_targets": ["pgrx"],
+  "pg_duckdb_targets": ["pg-duckdb"]
 }

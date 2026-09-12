@@ -1,0 +1,20 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: verify-pg-duckdb
+spec:
+  timeouts:
+    apply: 5s
+    assert: 3m
+    delete: 30s
+  description: >-
+    Verifies the pg_duckdb SQL release, embedded DuckDB version, bundled
+    extensions, and DuckDB execution against a PostgreSQL table.
+  steps:
+  - name: Run pg_duckdb functional checks
+    try:
+    - apply:
+        file: functional-check.yaml
+    - assert:
+        timeout: 3m
+        file: functional-check-assert.yaml

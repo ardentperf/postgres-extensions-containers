@@ -7,6 +7,9 @@
 # pg_cron
 /pg-cron/ @ardentperf
 
+# pg_duckdb
+/pg-duckdb/ @ardentperf
+
 # pldebugger
 /pldebugger/ @ardentperf
 

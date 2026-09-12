@@ -119,6 +119,15 @@
   ],
   "packageRules": [
     {
+      "description": "require manual review for pg-duckdb updates",
+      "matchDatasources": ["github-tags"],
+      "matchPackageNames": ["duckdb/pg_duckdb"],
+      "automerge": false,
+      "prBodyNotes": [
+        "Current pg_duckdb SQL extension version is 1.1.0, including in source release v1.1.1. The source release tag and SQL extension version are independent. Before merging, inspect pg_duckdb.control and the install/upgrade SQL at the proposed upstream tag. Manually synchronize pg-duckdb/metadata.hcl and pg-duckdb/README.md with the verified package and SQL versions, and update this note in renovate.json if the SQL version changes. Review the DuckDB/HTTPFS pins and vendored dependency inventory, and require the build, SBOM, and E2E checks to pass."
+      ]
+    },
+    {
       "description": "require manual review for mysql-fdw updates",
       "matchPackageNames": [
         "postgresql-18-mysql-fdw"

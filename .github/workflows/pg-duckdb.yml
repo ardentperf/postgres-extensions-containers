@@ -1,0 +1,53 @@
+name: Build, test and publish pg_duckdb
+
+on:
+  push:
+    paths:
+      - "pg-duckdb/**"
+      - "dagger/maintenance/**"
+      - "renovate.json"
+      - ".github/workflows/pg-duckdb.yml"
+      - ".github/workflows/pgrx_targets.yml"
+      - "scripts/compose_sboms.sh"
+      - "scripts/compose_sbom.py"
+  pull_request:
+    paths:
+      - "pg-duckdb/**"
+      - "dagger/maintenance/**"
+      - "renovate.json"
+      - ".github/workflows/pg-duckdb.yml"
+      - ".github/workflows/pgrx_targets.yml"
+      - "scripts/compose_sboms.sh"
+      - "scripts/compose_sbom.py"
+  workflow_dispatch:
+    inputs:
+      local:
+        description: "Use a local registry and skip GitHub-only side effects"
+        required: false
+        default: false
+        type: boolean
+      platform:
+        description: "Single platform for local validation; empty selects the production matrix"
+        required: false
+        default: ""
+        type: string
+
+permissions: {}
+
+jobs:
+  pg-duckdb:
+    name: Build pg_duckdb
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      security-events: write
+    uses: ./.github/workflows/pgrx_targets.yml
+    with:
+      extension_name: pg-duckdb
+      bake_file: pg-duckdb/build/docker-bake.hcl
+      compose_script: ./pg-duckdb/build/compose_sboms.sh
+      local: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.local == 'true' }}
+      platform: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.platform || '' }}
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}

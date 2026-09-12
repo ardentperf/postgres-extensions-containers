@@ -1,0 +1,38 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pg-duckdb-functional
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: functional-check
+        env:
+          # Clear the image-baked PGSSLROOTCERT=system so libpq doesn't
+          # try to verify the CNPG self-signed CA against the OS trust store.
+          - name: PGSSLROOTCERT
+          - name: DB_URI
+            valueFrom:
+              secretKeyRef:
+                name: (join('-', [$values.name, 'app']))
+                key: uri
+        # renovate: datasource=docker depName=alpine/psql versioning=docker
+        image: alpine/psql:18.6@sha256:9f389be3a98d68da36600ae8d9de4ab311057e6dcdaa83edb92ddf2422c20767
+        command: ['sh', '-c']
+        args:
+        - |
+          set -eu
+          db_uri=$(printf '%s' "$DB_URI" | sed 's|/\*|/|')
+
+          test "$(psql "$db_uri" -X -Atqc "SELECT extversion FROM pg_catalog.pg_extension WHERE extname = 'pg_duckdb'")" = "1.1.0"
+          test "$(psql "$db_uri" -X -Atqc "SELECT (q)['version'] FROM duckdb.query(\$q\$SELECT version() AS version\$q\$) AS q")" = "v1.4.3"
+
+          bundled=$(psql "$db_uri" -X -Atqc "SELECT count(*) FROM duckdb.query(\$q\$SELECT extension_name, loaded, installed FROM duckdb_extensions() WHERE extension_name IN ('json', 'icu', 'httpfs')\$q\$) AS q WHERE (q)['loaded']::boolean AND (q)['installed']::boolean")
+          test "$bundled" = "3"
+
+          psql "$db_uri" -X -v ON_ERROR_STOP=1 -c "DROP TABLE IF EXISTS pg_duckdb_functional; CREATE TABLE pg_duckdb_functional(value integer); INSERT INTO pg_duckdb_functional VALUES (7), (30); SET duckdb.force_execution = true;" >/dev/null
+          explain=$(psql "$db_uri" -X -Atqc "SET duckdb.force_execution = true; EXPLAIN (FORMAT TEXT) SELECT sum(value) FROM pg_duckdb_functional")
+          printf '%s\n' "$explain" | grep -Fq 'Custom Scan (DuckDBScan)'
+          printf '%s\n' "$explain" | grep -Fq 'DuckDB Execution Plan:'
+          test "$(psql "$db_uri" -X -Atqc "SELECT sum(value) FROM pg_duckdb_functional")" = "37"

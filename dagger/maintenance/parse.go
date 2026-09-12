@@ -73,8 +73,9 @@ const (
 )
 
 const (
-	debianBuildSystem = "debian"
-	pgrxBuildSystem   = "pgrx"
+	debianBuildSystem   = "debian"
+	pgrxBuildSystem     = "pgrx"
+	pgDuckdbBuildSystem = "pg-duckdb"
 )
 
 // effectiveBuildSystem preserves the repository's historical default while
@@ -83,7 +84,7 @@ func effectiveBuildSystem(metadata *extensionMetadata) (string, error) {
 	if metadata.BuildSystem == "" {
 		return debianBuildSystem, nil
 	}
-	if metadata.BuildSystem != debianBuildSystem && metadata.BuildSystem != pgrxBuildSystem {
+	if metadata.BuildSystem != debianBuildSystem && metadata.BuildSystem != pgrxBuildSystem && metadata.BuildSystem != pgDuckdbBuildSystem {
 		return "", fmt.Errorf("unsupported build_system %q for target %q", metadata.BuildSystem, metadata.Name)
 	}
 	return metadata.BuildSystem, nil
