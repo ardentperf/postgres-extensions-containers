@@ -105,7 +105,6 @@ jobs:
       packages: write
       contents: read
       id-token: write
-      attestations: write
       security-events: write
     if: ${{ join(fromJSON(needs.change-triage.outputs.matrix)) != '' }}
     strategy:

@@ -43,12 +43,11 @@ sed '1iARG BUILDKIT_SBOM_SCAN_STAGE=builder' "${EXTENSION_NAME}/Dockerfile" > "$
 mapfile -t bake_targets < <(jq -r '.target | keys[]' "${bake_definition}")
 test "${#bake_targets[@]}" -gt 0
 attestation_records=()
-mapfile -t actions_attest_refs < <(
-  sed -n 's/^[[:space:]]*uses:[[:space:]]*\(actions\/attest@[0-9a-f]\{40\}\).*/\1/p' \
-    "${GITHUB_WORKSPACE}/.github/workflows/bake_targets.yml" | sort -u
-)
-test "${#actions_attest_refs[@]}" -eq 1
-actions_attest_ref="${actions_attest_refs[0]}"
+if command -v cosign > /dev/null 2>&1; then
+  cosign_version="$(cosign version 2>&1 | sed -n '1p')"
+else
+  cosign_version="unavailable (local build)"
+fi
 
 for bake_target in "${bake_targets[@]}"; do
   image=$(jq -r --arg target "${bake_target}" '.target[$target].tags[0]' "${bake_definition}")
@@ -145,7 +144,7 @@ for bake_target in "${bake_targets[@]}"; do
       "buildx": "$(docker buildx version)",
       "jq": "$(jq --version)",
       "scancode": "$(scancode --version | head -n 1)",
-      "actionsAttest": "${actions_attest_ref}"
+      "cosign": "${cosign_version}"
     }
   },
   "workflow": {
@@ -161,12 +160,10 @@ EOF
   jq -e --arg namespace "https://github.com/cnpg-extensions/postgres-extensions-containers/sbom-composition/v1" \
     --argjson platform_count "${#platforms[@]}" \
     --arg index_digest "${image_index_digest}" \
-    --arg actions_attest_ref "${actions_attest_ref}" \
     '.schemaVersion == $namespace and
      (.inputs.builderSboms | length == $platform_count) and
      (.image.platforms | length == $platform_count) and
-     .image.indexDigest == $index_digest and
-     .composer.toolVersions.actionsAttest == $actions_attest_ref' \
+     .image.indexDigest == $index_digest' \
     "${provenance_manifest}"
 
   "${compose_args[@]}"

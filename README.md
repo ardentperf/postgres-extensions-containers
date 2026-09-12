@@ -262,10 +262,10 @@ aggregate; the composer itself remains focused on SBOM inventory composition.
 The final scratch stage is not scanned or read as an SBOM. During CI, the
 builder SBOM and its final-image file subjects are composed into one SPDX
 predicate per image target, aggregating the platform-specific results. The
-single aggregate is signed by GitHub Actions and attached to the
-multi-platform image index. This keeps the SBOM focused on the extension
-payload while still making vulnerabilities in shipped system-library and
-PostgreSQL packages visible. BuildKit's image provenance remains a separate
+single aggregate is signed keylessly with Cosign from GitHub Actions and
+attached to the multi-platform image index. This keeps the SBOM focused on the
+extension payload while still making vulnerabilities in shipped system-library
+and PostgreSQL packages visible. BuildKit's image provenance remains a separate
 attestation because it describes how the image was built rather than what the
 image contains.
 
@@ -300,7 +300,7 @@ act -W .github/workflows/bake_targets.yml -j testbuild \
 
 The workflow follows the verification pattern described in CloudNativePG's
 [security documentation](https://cloudnative-pg.io/docs/devel/security/),
-adapted for this repository's separate BuildKit and GitHub Actions
+adapted for this repository's separate BuildKit and Cosign
 attestations.
 
 The commands below use an immutable multi-platform image index. Replace
@@ -327,35 +327,37 @@ should be verified with that ref instead.
 
 ### Retrieve and verify the aggregate SBOM attestation
 
-The aggregate SBOM is a GitHub Actions artifact attestation attached to the
+The aggregate SBOM is a keyless Cosign/Sigstore attestation attached to the
 multi-platform index. This is one SBOM attestation for the whole index, rather
-than one SBOM attestation per platform. `gh attestation verify` verifies the
-signed in-toto statement and can also extract its SPDX predicate:
+than one SBOM attestation per platform. `cosign verify-attestation` verifies
+the signed in-toto statement and emits its envelope:
 
 ```bash
-gh attestation verify "oci://<IMAGE>@<INDEX_DIGEST>" \
-  --repo cnpg-extensions/postgres-extensions-containers \
-  --predicate-type https://spdx.dev/Document/v2.3 \
-  --format json \
-  --jq '.[].verificationResult.statement.predicate' > image-sbom.spdx.json
+cosign verify-attestation \
+  --type https://spdx.dev/Document \
+  --certificate-identity-regexp='^https://github.com/cnpg-extensions/postgres-extensions-containers/.github/workflows/bake_targets\.yml@refs/heads/main$' \
+  --certificate-oidc-issuer='https://token.actions.githubusercontent.com' \
+  "<IMAGE>@<INDEX_DIGEST>" \
+  | jq -r '.payload' | base64 --decode > image-sbom.attestation.json
+jq '.predicate' image-sbom.attestation.json > image-sbom.spdx.json
 ```
 
-To retain the complete in-toto statement covered by the signature, including
-the SPDX composition annotation, extract the statement instead:
+The decoded file is the complete in-toto statement covered by the signature,
+including the SPDX composition annotation. To retrieve the predicate directly
+without verification, use:
 
 ```bash
-gh attestation verify "oci://<IMAGE>@<INDEX_DIGEST>" \
-  --repo cnpg-extensions/postgres-extensions-containers \
-  --predicate-type https://spdx.dev/Document/v2.3 \
-  --format json \
-  --jq '.[].verificationResult.statement' > image-sbom.attestation.json
+cosign download attestation \
+  --predicate-type https://spdx.dev/Document \
+  "<IMAGE>@<INDEX_DIGEST>" \
+  | jq -r '.payload' | base64 --decode | jq '.predicate' > image-sbom.spdx.json
 ```
 
 The annotation records the builder SBOM hash for each platform, the build
 definition hash, source and image digests, composer/tool details, and the
 GitHub workflow/run identity. It is intentionally provisional along with the
 rest of this SBOM implementation; consumers should not treat its field set as
-a stable API. `gh attestation verify` verifies the attestation's signer,
+a stable API. `cosign verify-attestation` verifies the attestation's signer,
 subject digest, and predicate type; consumers that rely on the composition
 details should additionally inspect the annotation contents.
 
@@ -391,8 +393,8 @@ be inspected with standard JSON tools. See the [BuildKit attestations
 documentation](https://docs.docker.com/build/metadata/attestations/) for the
 format.
 
-The BuildKit and GitHub SBOM attestations intentionally answer different
-questions: the BuildKit attestation describes the build, while the GitHub SBOM
+The BuildKit and Cosign SBOM attestations intentionally answer different
+questions: the BuildKit attestation describes the build, while the Cosign SBOM
 attestation binds the composed inventory and its composition evidence to the
 image index.
 

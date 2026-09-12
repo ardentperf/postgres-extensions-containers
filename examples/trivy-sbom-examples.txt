@@ -1,4 +1,4 @@
-$ gh attestation verify 'oci://ghcr.io/cnpg-extensions/pgagent-testing@sha256:141d4af0a51af92f326944f00487f84d526bfb6d667eff5c87799e1643aaf805' --repo cnpg-extensions/postgres-extensions-containers --bundle-from-oci --predicate-type https://spdx.dev/Document/v2.3 --format json --jq '.[].verificationResult.statement.predicate' > pgagent-bookworm.spdx.json
+$ cosign verify-attestation --type https://spdx.dev/Document --certificate-identity-regexp='^https://github.com/cnpg-extensions/postgres-extensions-containers/.github/workflows/bake_targets\.yml@refs/heads/main$' --certificate-oidc-issuer='https://token.actions.githubusercontent.com' 'ghcr.io/cnpg-extensions/pgagent-testing@sha256:141d4af0a51af92f326944f00487f84d526bfb6d667eff5c87799e1643aaf805' | jq -r '.payload' | base64 --decode | jq '.predicate' > pgagent-bookworm.spdx.json
 $ trivy sbom --scanners vuln,license --no-progress --skip-version-check pgagent-bookworm.spdx.json
 2026-09-06T17:29:40Z	INFO	[vuln] Vulnerability scanning is enabled
 2026-09-06T17:29:40Z	INFO	[license] License scanning is enabled
@@ -61,7 +61,7 @@ Total: 3 (UNKNOWN: 3, LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0)
 │ pgagent                   │ LicenseRef-scancode-unknown-license-reference AND PostgreSQL │                │          │
 └───────────────────────────┴──────────────────────────────────────────────────────────────┴────────────────┴──────────┘
 
-$ gh attestation verify 'oci://ghcr.io/cnpg-extensions/mobilitydb-testing@sha256:ab54a22a15959dcc253efd28d3fb0932097460ee72a01b1ba45a6f1e4ed4f493' --repo cnpg-extensions/postgres-extensions-containers --bundle-from-oci --predicate-type https://spdx.dev/Document/v2.3 --format json --jq '.[].verificationResult.statement.predicate' > mobilitydb-trixie.spdx.json
+$ cosign verify-attestation --type https://spdx.dev/Document --certificate-identity-regexp='^https://github.com/cnpg-extensions/postgres-extensions-containers/.github/workflows/bake_targets\.yml@refs/heads/main$' --certificate-oidc-issuer='https://token.actions.githubusercontent.com' 'ghcr.io/cnpg-extensions/mobilitydb-testing@sha256:ab54a22a15959dcc253efd28d3fb0932097460ee72a01b1ba45a6f1e4ed4f493' | jq -r '.payload' | base64 --decode | jq '.predicate' > mobilitydb-trixie.spdx.json
 $ trivy sbom --scanners vuln,license --no-progress --skip-version-check mobilitydb-trixie.spdx.json
 2026-09-06T17:29:39Z	INFO	[vuln] Vulnerability scanning is enabled
 2026-09-06T17:29:39Z	INFO	[license] License scanning is enabled

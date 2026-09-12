@@ -168,7 +168,6 @@ jobs:
       contents: read
       packages: write
       id-token: write
-      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -187,15 +186,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Attest aggregate SBOM
-        # If this pin changes, verify composer.toolVersions.actionsAttest in the SBOM manifest remains aligned.
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
-        with:
-          subject-name: ${{ matrix.sbom.testingSubject }}
-          subject-digest: ${{ matrix.sbom.indexDigest }}
-          sbom-path: extension-sboms/${{ matrix.sbom.predicatePath }}
-          push-to-registry: true
-          create-storage-record: false
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Attest aggregate SBOM with Cosign
+        env:
+          IMAGE: ${{ matrix.sbom.testingSubject }}
+          INDEX_DIGEST: ${{ matrix.sbom.indexDigest }}
+          PREDICATE: extension-sboms/${{ matrix.sbom.predicatePath }}
+        run: |
+          cosign attest --yes \
+            --type https://spdx.dev/Document \
+            --predicate "${PREDICATE}" \
+            "${IMAGE}@${INDEX_DIGEST}"
 
   security:
     name: Security checks
@@ -318,8 +321,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-      # Required by the cosign step
-      id-token: write
     steps:
       - name: Copy to production
         uses: cloudnative-pg/postgres-containers/.github/actions/copy-images@main
@@ -366,7 +367,6 @@ jobs:
       contents: read
       packages: write
       id-token: write
-      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -385,12 +385,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Attest production aggregate SBOM
-        # If this pin changes, verify composer.toolVersions.actionsAttest in the SBOM manifest remains aligned.
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
-        with:
-          subject-name: ${{ matrix.sbom.productionSubject }}
-          subject-digest: ${{ matrix.sbom.indexDigest }}
-          sbom-path: extension-sboms/${{ matrix.sbom.predicatePath }}
-          push-to-registry: true
-          create-storage-record: false
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Attest production aggregate SBOM with Cosign
+        env:
+          IMAGE: ${{ matrix.sbom.productionSubject }}
+          INDEX_DIGEST: ${{ matrix.sbom.indexDigest }}
+          PREDICATE: extension-sboms/${{ matrix.sbom.predicatePath }}
+        run: |
+          cosign attest --yes \
+            --type https://spdx.dev/Document \
+            --predicate "${PREDICATE}" \
+            "${IMAGE}@${INDEX_DIGEST}"
