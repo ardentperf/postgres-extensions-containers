@@ -29,7 +29,7 @@ manifest_file=${source_dir}/Cargo.toml
 apt-get update
 apt-get install -y --no-install-recommends \
     build-essential ca-certificates clang cmake curl git jq libclang-dev \
-    libssl-dev pkg-config python3 postgresql-server-dev-${pg_major}
+    libssl-dev pkg-config python3 postgresql-server-dev-${pg_major} xz-utils
 rm -rf /var/lib/apt/lists/*
 
 test -x "${pg_config}"
@@ -62,8 +62,29 @@ pgrx_version="$(
 )"
 
 cargo install --root /usr/local --locked --version "${pgrx_version}" cargo-pgrx
-cargo install --root /usr/local --locked --version "${CARGO_CYCLONEDX_VERSION}" cargo-cyclonedx
-cargo install --root /usr/local --locked --version "${CARGO_ABOUT_VERSION}" cargo-about --features cli
+
+install_static_cargo_binary() {
+    local archive_url=${1:?archive URL is required}
+    local binary_name=${2:?binary name is required}
+    local archive_name="${archive_url##*/}"
+    local download_directory="$(mktemp -d)"
+    curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+        --output "${download_directory}/${archive_name}" \
+        "${archive_url}"
+    tar --extract --file "${download_directory}/${archive_name}" \
+        --directory "${download_directory}"
+    install --mode 0755 \
+        "$(find "${download_directory}" -type f -name "${binary_name}" -print -quit)" \
+        "/usr/local/bin/${binary_name}"
+    rm -rf "${download_directory}"
+}
+
+install_static_cargo_binary \
+    "https://github.com/CycloneDX/cyclonedx-rust-cargo/releases/download/cargo-cyclonedx-${CARGO_CYCLONEDX_VERSION}/cargo-cyclonedx-$(arch)-unknown-linux-musl.tar.xz" \
+    cargo-cyclonedx
+install_static_cargo_binary \
+    "https://github.com/EmbarkStudios/cargo-about/releases/download/${CARGO_ABOUT_VERSION}/cargo-about-${CARGO_ABOUT_VERSION}-$(arch)-unknown-linux-musl.tar.gz" \
+    cargo-about
 
 cargo pgrx init --pg${pg_major} "${pg_config}" --no-run
 cargo metadata --locked --format-version=1 --manifest-path "${manifest_file}" \
