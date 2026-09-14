@@ -38,6 +38,12 @@ class RenovateSourceTest(unittest.TestCase):
                     content,
                 )
                 continue
+            if target == "pg-graphql":
+                self.assertIn(
+                    "ADD https://github.com/supabase/pg_graphql/archive/${EXT_VERSION}.tar.gz /tmp/source.tar.gz",
+                    content,
+                )
+                continue
             match = None
             for source_re in SOURCE_RES:
                 match = source_re.search(content)
@@ -64,6 +70,10 @@ class RenovateSourceTest(unittest.TestCase):
             if target == "pg-session-jwt":
                 self.assertIn('package = "v0.5.0"', metadata)
                 self.assertIn('sql     = "0.5.0"', metadata)
+                continue
+            if target == "pg-graphql":
+                self.assertIn('package = "v1.6.2"', metadata)
+                self.assertIn('sql     = "1.6.2"', metadata)
                 continue
             version = re.search(r"#\s+v(\d+\.\d+\.\d+)", dockerfile).group(1)
             package_version = version
