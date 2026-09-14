@@ -1110,3 +1110,54 @@ Total: 505 (UNKNOWN: 29, LOW: 472, MEDIUM: 0, HIGH: 0, CRITICAL: 4)
 ├───────────────────────────────────────┤                                                             │                │          │
 │ zstd-sys                              │                                                             │                │          │
 └───────────────────────────────────────┴─────────────────────────────────────────────────────────────┴────────────────┴──────────┘
+
+
+Builder-layer comparison
+------------------------
+
+The security scan target is the builder stage, not the final scratch image.
+The final-payload transcript above is retained as a separate comparison.
+
+Target: pg-search-builder:v0.25.6-18-trixie
+Platform: linux/amd64
+Image index digest: sha256:5d833d98a8da294ab4028244a5e1a07c6f8348096edcfda6b2111eaabe5d5be5
+Platform manifest digest: sha256:0cfc81fc9df0d9f605de336a7b6fbae2eaa4b3ac29c5d419ee18ec769637ed13
+Trivy image: aquasec/trivy:0.66.0
+Trivy database: cached at 2026-09-11T07:00:51Z
+
+Command:
+
+  trivy image --insecure --scanners vuln --no-progress --skip-version-check \
+    127.0.0.1:5000/pg-search-builder:v0.25.6-18-trixie
+
+Direct image-scan summary:
+
+  Detected OS: Debian 13.6
+  OS packages: 259
+  Language-specific files: 818
+  Vulnerabilities: 2281
+  Severity totals: CRITICAL 16, HIGH 352, MEDIUM 957, LOW 939, UNKNOWN 17
+  Cargo vulnerability targets: 130
+  Cargo findings: 608 (238 unique package/version/advisory combinations)
+
+The project lockfile target (build/Cargo.lock) reported:
+
+  cmov 0.5.3             CVE-2026-50185       MEDIUM
+  postgres-protocol 0.6.11 GHSA-5x78-73v4-xg6w HIGH
+  postgres-protocol 0.6.11 GHSA-rgqc-3x5p-6gwg MEDIUM
+  tokio-postgres 0.7.17 GHSA-3gjw-f78c-vvpw MEDIUM
+
+The remaining Cargo findings come from the Cargo registry and git checkout
+caches retained in the builder layer. They are build-environment findings,
+not evidence that all of those cached versions are shipped in the scratch
+image.
+
+Trivy SPDX export and round-trip:
+
+  trivy image --format spdx-json --output pg-search-builder.spdx.json ...
+  trivy sbom --scanners vuln pg-search-builder.spdx.json
+
+The exported SPDX is SPDX-2.3 with 30,513 package records and 29,433 Cargo
+PURLs. Those records represent 4,409 unique PURLs because the builder retains
+many independent Cargo.lock files and package caches. Scanning the exported
+SPDX reproduced the same 2,281 findings and severity totals.
