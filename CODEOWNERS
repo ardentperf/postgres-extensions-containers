@@ -43,14 +43,38 @@
 # h3
 /h3/ @ardentperf
 
+# hypopg
+/hypopg/ @ardentperf
+
+# pg-hint-plan
+/pg-hint-plan/ @ardentperf
+
+# pg-partman
+/pg-partman/ @ardentperf
+
+# pg-qualstats
+/pg-qualstats/ @ardentperf
+
 # q3c
 /q3c/ @ardentperf
+
+# pg-squash
+/pg-squash/ @ardentperf
+
+# pg-stat-kcache
+/pg-stat-kcache/ @ardentperf
 
 # plr
 /plr/ @ardentperf
 
+# plpgsql-check
+/plpgsql-check/ @ardentperf
+
 # pgsphere
 /pgsphere/ @ardentperf
+
+# pgsentinel
+/pgsentinel/ @ardentperf
 
 # debversion
 /debversion/ @ardentperf

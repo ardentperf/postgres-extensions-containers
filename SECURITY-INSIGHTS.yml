@@ -51,10 +51,22 @@ repository:
         comment: GitHub packages for the MobilityDB extension image
       - uri: https://github.com/cnpg-extensions/postgres-extensions-containers/pkgs/container/mysql-fdw
         comment: GitHub packages for the mysql_fdw extension image
+      - uri: https://github.com/cnpg-extensions/postgres-extensions-containers/pkgs/container/hypopg
+        comment: GitHub packages for the HypoPG extension image
+      - uri: https://github.com/cnpg-extensions/postgres-extensions-containers/pkgs/container/pg-hint-plan
+        comment: GitHub packages for the pg_hint_plan extension image
       - uri: https://github.com/cnpg-extensions/postgres-extensions-containers/pkgs/container/pg-cron
         comment: GitHub packages for the pg_cron extension image
+      - uri: https://github.com/cnpg-extensions/postgres-extensions-containers/pkgs/container/pg-partman
+        comment: GitHub packages for the pg_partman extension image
+      - uri: https://github.com/cnpg-extensions/postgres-extensions-containers/pkgs/container/pg-qualstats
+        comment: GitHub packages for the pg_qualstats extension image
       - uri: https://github.com/cnpg-extensions/postgres-extensions-containers/pkgs/container/pg-rrule
         comment: GitHub packages for the pg_rrule extension image
+      - uri: https://github.com/cnpg-extensions/postgres-extensions-containers/pkgs/container/pg-squash
+        comment: GitHub packages for the pg_squeeze extension image
+      - uri: https://github.com/cnpg-extensions/postgres-extensions-containers/pkgs/container/pg-stat-kcache
+        comment: GitHub packages for the pg_stat_kcache extension image
       - uri: https://github.com/cnpg-extensions/postgres-extensions-containers/pkgs/container/pg-uuidv7
         comment: GitHub packages for the pg_uuidv7 extension image
       - uri: https://github.com/cnpg-extensions/postgres-extensions-containers/pkgs/container/pgagent
@@ -65,10 +77,14 @@ repository:
         comment: GitHub packages for the pgmp extension image
       - uri: https://github.com/cnpg-extensions/postgres-extensions-containers/pkgs/container/pgsphere
         comment: GitHub packages for the pgsphere extension image
+      - uri: https://github.com/cnpg-extensions/postgres-extensions-containers/pkgs/container/pgsentinel
+        comment: GitHub packages for the pgsentinel extension image
       - uri: https://github.com/cnpg-extensions/postgres-extensions-containers/pkgs/container/pldebugger
         comment: GitHub packages for the pldebugger extension image
       - uri: https://github.com/cnpg-extensions/postgres-extensions-containers/pkgs/container/plprofiler
         comment: GitHub packages for the plprofiler extension image
+      - uri: https://github.com/cnpg-extensions/postgres-extensions-containers/pkgs/container/plpgsql-check
+        comment: GitHub packages for the plpgsql_check extension image
       - uri: https://github.com/cnpg-extensions/postgres-extensions-containers/pkgs/container/plr
         comment: GitHub packages for the plr extension image
       - uri: https://github.com/cnpg-extensions/postgres-extensions-containers/pkgs/container/q3c
