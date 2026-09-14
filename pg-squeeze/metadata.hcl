@@ -1,9 +1,9 @@
 # SPDX-FileCopyrightText: Copyright © contributors to CNPG Extensions.
 # SPDX-License-Identifier: Apache-2.0
 metadata = {
-  name                     = "pg-squash"
+  name                     = "pg-squeeze"
   sql_name                 = "pg_squeeze"
-  image_name               = "pg-squash"
+  image_name               = "pg-squeeze"
   licenses                 = ["PostgreSQL"]
   shared_preload_libraries = ["pg_squeeze"]
   postgresql_parameters    = {

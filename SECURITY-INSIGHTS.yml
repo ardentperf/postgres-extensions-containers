@@ -63,7 +63,7 @@ repository:
         comment: GitHub packages for the pg_qualstats extension image
       - uri: https://github.com/cnpg-extensions/postgres-extensions-containers/pkgs/container/pg-rrule
         comment: GitHub packages for the pg_rrule extension image
-      - uri: https://github.com/cnpg-extensions/postgres-extensions-containers/pkgs/container/pg-squash
+      - uri: https://github.com/cnpg-extensions/postgres-extensions-containers/pkgs/container/pg-squeeze
         comment: GitHub packages for the pg_squeeze extension image
       - uri: https://github.com/cnpg-extensions/postgres-extensions-containers/pkgs/container/pg-stat-kcache
         comment: GitHub packages for the pg_stat_kcache extension image

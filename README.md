@@ -42,7 +42,7 @@ project due to licensing constraints, but are otherwise fully compatible with
 | **[pg-partman](pg-partman)** | Time- and ID-based partition management | [github.com/pgpartman/pg_partman](https://github.com/pgpartman/pg_partman) | @ardentperf | PostgreSQL License |
 | **[pg-qualstats](pg-qualstats)** | Predicate and missing-index statistics | [github.com/powa-team/pg_qualstats](https://github.com/powa-team/pg_qualstats) | @ardentperf | PostgreSQL License |
 | **[pg-rrule](pg-rrule)** | iCalendar RRULE recurrence rule type | [github.com/petropavel13/pg_rrule](https://github.com/petropavel13/pg_rrule) | @ardentperf | libical3 (LGPL-2.1/MPL-2.0) |
-| **[pg-squash](pg-squash)** | Online table bloat cleanup (pg_squeeze) | [github.com/cybertec-postgresql/pg_squeeze](https://github.com/cybertec-postgresql/pg_squeeze) | @ardentperf | PostgreSQL License |
+| **[pg-squeeze](pg-squeeze)** | Online table bloat cleanup (pg_squeeze) | [github.com/cybertec-postgresql/pg_squeeze](https://github.com/cybertec-postgresql/pg_squeeze) | @ardentperf | PostgreSQL License |
 | **[pg-stat-kcache](pg-stat-kcache)** | Per-query kernel and filesystem statistics | [github.com/powa-team/pg_stat_kcache](https://github.com/powa-team/pg_stat_kcache) | @ardentperf | PostgreSQL License |
 | **[pg-uuidv7](pg-uuidv7)** | UUID version 7 (time-sortable) generator | [github.com/fboulnois/pg_uuidv7](https://github.com/fboulnois/pg_uuidv7) | @ardentperf | MPL-2.0 |
 | **[pgagent](pgagent)** | PostgreSQL job scheduler (pgAdmin component) | [pgadmin.org](https://www.pgadmin.org/docs/pgadmin4/latest/pgagent.html) | @ardentperf | Boost libraries (BSL-1.0) |

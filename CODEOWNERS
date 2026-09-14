@@ -58,8 +58,8 @@
 # q3c
 /q3c/ @ardentperf
 
-# pg-squash
-/pg-squash/ @ardentperf
+# pg-squeeze
+/pg-squeeze/ @ardentperf
 
 # pg-stat-kcache
 /pg-stat-kcache/ @ardentperf

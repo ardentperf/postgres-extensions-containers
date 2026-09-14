@@ -1,10 +1,10 @@
-# pg-squash
+# pg-squeeze
 <!--
 SPDX-FileCopyrightText: Copyright © contributors to CNPG Extensions.
 SPDX-License-Identifier: Apache-2.0
 -->
 
-The requested pg-squash image contains the upstream
+The requested pg-squeeze image contains the upstream
 [pg_squeeze](https://github.com/cybertec-postgresql/pg_squeeze) extension. It
 removes unused table space and can sort tuples according to an index while
 allowing normal reads and writes for most of the operation.
@@ -23,10 +23,10 @@ postgresql:
   shared_preload_libraries:
   - pg_squeeze
   extensions:
-  - name: pg-squash
+  - name: pg-squeeze
     image:
       # renovate: suite=trixie-pgdg depName=postgresql-18-squeeze
-      reference: ghcr.io/cnpg-extensions/pg-squash:1.9.4-18-trixie
+      reference: ghcr.io/cnpg-extensions/pg-squeeze:1.9.4-18-trixie
 ~~~
 
 Enable the SQL extension in a Database:
@@ -35,12 +35,12 @@ Enable the SQL extension in a Database:
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
 metadata:
-  name: cluster-pg-squash-app
+  name: cluster-pg-squeeze-app
 spec:
   name: app
   owner: app
   cluster:
-    name: cluster-pg-squash
+    name: cluster-pg-squeeze
   extensions:
   - name: pg_squeeze
     # renovate: suite=trixie-pgdg depName=postgresql-18-squeeze extractVersion=^(?<version>\d+\.\d+)
