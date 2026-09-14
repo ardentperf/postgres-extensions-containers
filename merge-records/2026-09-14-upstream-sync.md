@@ -6,7 +6,7 @@ Reviewed locally on 2026-09-14 for the upstream merge branch.
 - Downstream merge base: `x-ai/ardentperf/revert-7d0e470` at `e6df6e44849dbee60d3e9eb372c9b08c7ead7677`
 - Upstream ref: `upstream/main` at `c1c47c21fb6ffa7ff46d19f019e8d6502dc8ffec` (`cloudnative-pg/postgres-extensions-containers`)
 - Last upstream commit already merged: `011b3fc72455574a6b87043f14c220f6b4cca160`
-- Downstream merge commit: `de085321536e94a602b62d32f99ca21e47fcc614`
+- Downstream merge commit: `4b9dc728fc988c95b4fad437e564262bb64d9154`
 - Upstream commits reviewed in `011b3fc72455574a6b87043f14c220f6b4cca160..c1c47c21fb6ffa7ff46d19f019e8d6502dc8ffec`: 7
 - Detailed non-dependency commits: 1
 - Pure dependency chore commits consolidated below: 6
