@@ -1,9 +1,89 @@
 package main
 
 import (
+	"encoding/json"
+	"os"
 	"slices"
 	"testing"
 )
+
+type mixedTargetFixture struct {
+	Targets []struct {
+		Name        string `json:"name"`
+		BuildSystem string `json:"build_system"`
+	} `json:"targets"`
+	DebianTargets []string `json:"debian_targets"`
+	PgrxTargets   []string `json:"pgrx_targets"`
+}
+
+func TestEffectiveBuildSystem(t *testing.T) {
+	tests := []struct {
+		name       string
+		metadata   extensionMetadata
+		wantSystem string
+		wantErr    bool
+	}{
+		{name: "omitted means Debian", metadata: extensionMetadata{Name: "legacy"}, wantSystem: debianBuildSystem},
+		{name: "explicit Debian", metadata: extensionMetadata{Name: "debian", BuildSystem: debianBuildSystem}, wantSystem: debianBuildSystem},
+		{name: "pgrx", metadata: extensionMetadata{Name: "pg-jsonschema", BuildSystem: pgrxBuildSystem}, wantSystem: pgrxBuildSystem},
+		{name: "unknown", metadata: extensionMetadata{Name: "bad", BuildSystem: "unknown"}, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := effectiveBuildSystem(&tt.metadata)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected an error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.wantSystem {
+				t.Fatalf("build system: got %q, want %q", got, tt.wantSystem)
+			}
+		})
+	}
+}
+
+func TestMixedTargetRoutingFixture(t *testing.T) {
+	data, err := os.ReadFile("testdata/mixed-target-routing.json")
+	if err != nil {
+		t.Fatalf("read mixed-target fixture: %v", err)
+	}
+
+	var fixture mixedTargetFixture
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		t.Fatalf("decode mixed-target fixture: %v", err)
+	}
+
+	debianTargets := make([]string, 0, len(fixture.Targets))
+	pgrxTargets := make([]string, 0, len(fixture.Targets))
+	for _, target := range fixture.Targets {
+		buildSystem, err := effectiveBuildSystem(&extensionMetadata{
+			Name:        target.Name,
+			BuildSystem: target.BuildSystem,
+		})
+		if err != nil {
+			t.Fatalf("classify %q: %v", target.Name, err)
+		}
+		switch buildSystem {
+		case debianBuildSystem:
+			debianTargets = append(debianTargets, target.Name)
+		case pgrxBuildSystem:
+			pgrxTargets = append(pgrxTargets, target.Name)
+		}
+	}
+
+	if !slices.Equal(debianTargets, fixture.DebianTargets) {
+		t.Fatalf("Debian targets: got %v, want %v", debianTargets, fixture.DebianTargets)
+	}
+	if !slices.Equal(pgrxTargets, fixture.PgrxTargets) {
+		t.Fatalf("pgrx targets: got %v, want %v", pgrxTargets, fixture.PgrxTargets)
+	}
+}
 
 func TestBuildMatrixFromMetadata(t *testing.T) {
 	tests := []struct {

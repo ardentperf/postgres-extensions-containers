@@ -1,0 +1,44 @@
+version: 3
+
+output: prefixed
+
+vars:
+  REGISTRY: '{{.REGISTRY | default "localhost:5000"}}'
+
+tasks:
+  checks:
+    desc: Check one pgrx Dockerfile and Bake definition
+    requires:
+      vars: [TARGET]
+    cmds:
+      - test -f "{{.TARGET}}/metadata.hcl"
+      - test "$(grep -c 'build_system[[:space:]]*=[[:space:]]*\"pgrx\"' "{{.TARGET}}/metadata.hcl")" -eq 1
+      - docker buildx bake -f docker-bake-pgrx.hcl -f "{{.TARGET}}/metadata.hcl" --check --set '*.output=type=cacheonly'
+
+  checks:all:
+    desc: Check all pgrx Dockerfiles
+    cmds:
+      - for target in pg-parquet pg-graphql pg-jsonschema pg-session-jwt pg-search; do task -t pgrx/Taskfile.yml checks TARGET="$target"; done
+
+  bake:
+    desc: Build one pgrx target
+    requires:
+      vars: [TARGET]
+    cmds:
+      - test -f "{{.TARGET}}/metadata.hcl"
+      - registry="{{.REGISTRY}}" docker buildx bake -f docker-bake-pgrx.hcl -f "{{.TARGET}}/metadata.hcl" --push
+
+  compose:
+    desc: Compose pgrx Cargo and filesystem SBOMs after a pushed build
+    requires:
+      vars: [TARGET]
+    env:
+      EXTENSION_NAME: '{{.TARGET}}'
+      IMAGE_REGISTRY: '{{.REGISTRY}}'
+      RUNNER_TEMP: '{{.RUNNER_TEMP | default "/tmp"}}'
+      GITHUB_SHA: '{{.GITHUB_SHA | default "local"}}'
+      GITHUB_WORKSPACE: '{{.GITHUB_WORKSPACE | default "."}}'
+      GITHUB_OUTPUT: '{{.GITHUB_OUTPUT | default "/tmp/pgrx-github-output"}}'
+    cmds:
+      - touch "{{.GITHUB_OUTPUT | default "/tmp/pgrx-github-output"}}"
+      - ./pgrx/compose_sboms.sh

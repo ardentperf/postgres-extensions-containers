@@ -1,0 +1,16 @@
+pgrx Trivy SBOM transcript
+===========================
+
+This file is reserved for the GitHub-attested aggregate predicate transcript.
+The administrator-run step is intentionally deferred until a hosted workflow
+has produced an immutable image/index digest and a signed SPDX predicate.
+Local act runs execute the same scanner against every local aggregate:
+
+  trivy sbom --scanners vuln,license --no-progress --skip-version-check \
+    /path/to/pgrx-sbom.spdx.json
+
+When completing this handoff, record the target, selected image/index digest,
+scan date, Trivy version, and the unedited plaintext command output below. Do
+not turn the transcript into a source-controlled vulnerability status report.
+
+DEFERRED: hosted GitHub-attested transcript has not yet been generated.

@@ -52,7 +52,7 @@ func (m *Maintenance) UpdateOSLibs(
 		}
 	}
 
-	targetExtensions, err := getExtensions(ctx, extDir, WithOSLibsFilter())
+	targetExtensions, err := getExtensions(ctx, extDir, WithOSLibsFilter(), WithBuildSystemFilter(debianBuildSystem))
 	if err != nil {
 		return source, err
 	}
@@ -101,7 +101,7 @@ func (m *Maintenance) GetOSLibsTargets(
 	// +defaultPath="/"
 	source *dagger.Directory,
 ) (string, error) {
-	targetExtensions, err := getExtensions(ctx, source, WithOSLibsFilter())
+	targetExtensions, err := getExtensions(ctx, source, WithOSLibsFilter(), WithBuildSystemFilter(debianBuildSystem))
 	if err != nil {
 		return "", err
 	}
@@ -121,7 +121,29 @@ func (m *Maintenance) GetTargets(
 	// +defaultPath="/"
 	source *dagger.Directory,
 ) (string, error) {
-	targetExtensions, err := getExtensions(ctx, source)
+	targetExtensions, err := getExtensions(ctx, source, WithBuildSystemFilter(debianBuildSystem))
+	if err != nil {
+		return "", err
+	}
+	jsonTargets, err := json.Marshal(slices.Sorted(maps.Keys(targetExtensions)))
+	if err != nil {
+		return "", err
+	}
+
+	return string(jsonTargets), nil
+}
+
+// Retrieves the pgrx extension targets. Debian targets intentionally remain
+// the default GetTargets result so existing callers and workflows are not
+// changed when pgrx directories are added.
+func (m *Maintenance) GetPgrxTargets(
+	ctx context.Context,
+	// The source directory containing the extension folders. Defaults to the current directory
+	// +ignore=["dagger", ".github"]
+	// +defaultPath="/"
+	source *dagger.Directory,
+) (string, error) {
+	targetExtensions, err := getExtensions(ctx, source, WithBuildSystemFilter(pgrxBuildSystem))
 	if err != nil {
 		return "", err
 	}
@@ -524,7 +546,7 @@ func (m *Maintenance) GenerateCatalogs(
 
 				extensionsConfig := ExtensionConfiguration{
 					Name: metadata.Name,
-					ImageVolumeSource: ImageVolumeSource{
+					ImageVolumeSource: &ImageVolumeSource{
 						Reference: targetExtensionImage,
 					},
 					ExtensionControlPath: metadata.ExtensionControlPath,

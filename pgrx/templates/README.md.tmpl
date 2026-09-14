@@ -1,0 +1,15 @@
+# <extension_sql_name>
+
+This target is a PostgreSQL extension built with pgrx. Copy and customize
+`Dockerfile.tmpl` into this target directory, then add `metadata.hcl` with
+`build_system = "pgrx"`.
+
+The Dockerfile must retain a commit-pinned GitHub archive URL, the locked Cargo
+metadata preflight, CycloneDX and cargo-about commands, normalized runtime
+payload, and the named `pgrx-sbom` stage. Source release/tool versions belong
+in the Dockerfile; the catalog/image source version belongs in metadata and is
+kept synchronized with the Renovate tag comment.
+
+Run the focused pgrx checks and the local caller workflow before submitting a
+target. Explain package-specific non-free licensing questions in the issue or
+pull request; do not add a source-controlled license-review artifact.

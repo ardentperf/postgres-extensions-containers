@@ -15,6 +15,19 @@
   ],
   "customManagers": [
     {
+      "description": "updates commit-pinned pgrx GitHub archives and their release tag comments",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "**/Dockerfile"
+      ],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=github-tags\\s+depName=(?<depName>[^\\s]+)\\s+versioning=semver\\s*\\n\\s*RUN\\s+curl\\s+--fail\\s+--location\\s+--silent\\s+--show-error\\s+\"https://github\\.com/[^/]+/[^/]+/archive/(?<currentDigest>[a-f0-9]{40})\\.tar\\.gz\"\\s+-o\\s+/tmp/source\\.tar\\.gz\\s+#\\s+v(?<currentValue>[^\\s]+)"
+      ],
+      "datasourceTemplate": "github-tags",
+      "versioningTemplate": "semver",
+      "autoReplaceStringTemplate": "# renovate: datasource=github-tags depName={{{depName}}} versioning=semver\\nRUN curl --fail --location --silent --show-error \"https://github.com/{{{depName}}}/archive/{{{newDigest}}}.tar.gz\" -o /tmp/source.tar.gz # v{{{newValue}}}"
+    },
+    {
       "description": "updates the deb package versions in the metadata.hcl files",
       "customType": "regex",
       "managerFilePatterns": [

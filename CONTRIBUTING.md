@@ -17,6 +17,7 @@ a dedicated guide that covers everything from environment setup and package
 discovery to local testing and submission:
 
 - [Guide to adding a new extension: `CONTRIBUTING_NEW_EXTENSION.md`](CONTRIBUTING_NEW_EXTENSION.md)
+- [Guide to adding a pgrx extension: `CONTRIBUTING_NEW_PGRX_EXTENSION.md`](CONTRIBUTING_NEW_PGRX_EXTENSION.md)
 
 ## Development Environment
 
