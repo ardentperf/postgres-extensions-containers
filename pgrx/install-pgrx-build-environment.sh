@@ -80,7 +80,7 @@ install_static_cargo_binary() {
 }
 
 install_static_cargo_binary \
-    "https://github.com/CycloneDX/cyclonedx-rust-cargo/releases/download/cargo-cyclonedx-${CARGO_CYCLONEDX_VERSION}/cargo-cyclonedx-$(arch)-unknown-linux-musl.tar.xz" \
+    "https://github.com/CycloneDX/cyclonedx-rust-cargo/releases/download/cargo-cyclonedx-${CARGO_CYCLONEDX_VERSION}/cargo-cyclonedx-$(arch)-unknown-linux-gnu.tar.xz" \
     cargo-cyclonedx
 install_static_cargo_binary \
     "https://github.com/EmbarkStudios/cargo-about/releases/download/${CARGO_ABOUT_VERSION}/cargo-about-${CARGO_ABOUT_VERSION}-$(arch)-unknown-linux-musl.tar.gz" \
