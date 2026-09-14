@@ -15,12 +15,38 @@ vars:
   REGISTRY_HOST_PORT: 5000
   # Internal port exposed by the registry container image (always 5000)
   REGISTRY_INTERNAL_PORT: 5000
+
+  # renovate: datasource=docker depName=alpine versioning=docker
+  ALPINE_IMAGE: alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+  # renovate: datasource=github-releases depName=kubernetes-sigs/kind
+  KIND_VERSION: v0.33.0
   # renovate: datasource=docker depName=kindest/node versioning=docker
   KIND_NODE_VERSION: v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
   K8S_VERSION: '{{ regexReplaceAll "^v([0-9.]+).*" .KIND_NODE_VERSION "$1" }}'
   KIND_CLUSTER_NAME: pg-extensions-{{ .K8S_VERSION }}
   # renovate: datasource=github-tags depName=cloudnative-pg/cloudnative-pg versioning=semver-coerced extractVersion=^v(?<version>\d+\.\d+)\.\d+$
   CNPG_RELEASE_DEFAULT: '1.30'
+
+  DOCKER_SOCKET:
+    sh: docker context inspect -f {{`'{{json .Endpoints.docker.Host}}'`}} $(docker context show)
+  KIND_INSTALL_SCRIPT: >-
+    set -e;
+    ARCH=\$(uname -m);
+    case \${ARCH} in
+    x86_64) ARCH=amd64 ;;
+    aarch64|arm64) ARCH=arm64 ;;
+    *) echo unsupported arch: \${ARCH} >&2; exit 1 ;;
+    esac;
+    wget -qO /usr/local/bin/kind https://github.com/kubernetes-sigs/kind/releases/download/{{ .KIND_VERSION }}/kind-linux-\${ARCH};
+    chmod +x /usr/local/bin/kind
+  KIND_TOOLBOX: >-
+    dagger core container from --address={{ .ALPINE_IMAGE }}
+    with-exec --args="apk","add","--no-cache","docker-cli"
+    with-exec --args="sh","-c","{{ .KIND_INSTALL_SCRIPT }}"
+    with-unix-socket --path=/var/run/docker.sock --source={{ .DOCKER_SOCKET }}
+    with-env-variable --name=DOCKER_HOST --value=unix:///var/run/docker.sock
+    with-env-variable --name=KIND_EXPERIMENTAL_DOCKER_NETWORK --value={{ .E2E_NETWORK }}
+    with-env-variable --name=CACHE_BUSTER --value="$(date)"
 
 tasks:
   default:
@@ -222,18 +248,12 @@ tasks:
       - e2e:start-dagger-engine
     internal: true
     run: once
-    preconditions:
-      - sh: command -v kind
-        msg: 'Kind is not installed. Install Kind before running E2E tests.'
     vars:
       REGISTRY_DIR: /etc/containerd/certs.d/{{ .REGISTRY_NAME }}:{{ .REGISTRY_INTERNAL_PORT }}
       REGISTRY_HOST: '{{ .REGISTRY_HOST | default "" }}'
       REGISTRY_USERNAME: '{{ .REGISTRY_USERNAME | default "" }}'
-      DOCKER_CONTEXT_HOST:
-        sh: docker context inspect -f {{`'{{.Endpoints.docker.Host}}'`}} $(docker context show)
     env:
-      DOCKER_HOST: '{{ .DOCKER_CONTEXT_HOST }}'
-      KIND_EXPERIMENTAL_DOCKER_NETWORK: '{{ .E2E_NETWORK }}'
+      _EXPERIMENTAL_DAGGER_RUNNER_HOST: container://{{ .DAGGER_ENGINE_NAME }}
     cmds:
       - |
         KIND_CONFIG=$(cat <<'EOF'
@@ -247,10 +267,9 @@ tasks:
               config_path = "/etc/containerd/certs.d"
         EOF
         )
-        printf '%s\n' "${KIND_CONFIG}" | kind create cluster \
-          --name "{{ .KIND_CLUSTER_NAME }}" \
-          --image "kindest/node:{{ .KIND_NODE_VERSION }}" \
-          --config=-
+        {{ .KIND_TOOLBOX }} \
+        with-new-file --contents="${KIND_CONFIG}" --path=/root/kind-config.yaml \
+        with-exec --args="kind","create","cluster","--name","{{ .KIND_CLUSTER_NAME }}","--image","kindest/node:{{ .KIND_NODE_VERSION }}","--config","/root/kind-config.yaml" sync
       - docker exec "{{ .KIND_CLUSTER_NAME }}-control-plane" mkdir -p "{{ .REGISTRY_DIR }}"
       - |
         cat <<EOF | docker exec -i "{{ .KIND_CLUSTER_NAME }}-control-plane" cp /dev/stdin "{{ .REGISTRY_DIR }}/hosts.toml"
@@ -271,7 +290,9 @@ tasks:
         EOF
         fi
     status:
-      - kind get clusters | grep -Fxq "{{ .KIND_CLUSTER_NAME }}"
+      - >
+        test "$({{ .KIND_TOOLBOX }}
+        with-exec --args="sh","-c","kind get clusters 2>/dev/null | grep -qx {{ .KIND_CLUSTER_NAME }} && echo true || echo false" stdout)" = "true"
 
   e2e:install-cnpg:
     desc: Install CloudNativePG operator in the Kind cluster
@@ -284,9 +305,7 @@ tasks:
     vars:
       CNPG_RELEASE: '{{ .CNPG_RELEASE | default .CNPG_RELEASE_DEFAULT }}'
       # renovate: datasource=docker depName=alpine/kubectl versioning=docker
-      KUBECTL_VERSION: 1.37.0@sha256:601225d448500d59d19877e8e61bb861df48bd71373067bfbdf328aa74feb46a
-      DOCKER_CONTEXT_HOST:
-        sh: docker context inspect -f {{`'{{.Endpoints.docker.Host}}'`}} $(docker context show)
+      KUBECTL_VERSION: 1.37.0@sha256:f4ec5b2f9c92ba565a544e48fbcfe5353e3c6b96507f00dc898ccfb4b87889c5
       CNPG_MANIFEST:
         sh: |
           if [ "{{ .CNPG_RELEASE }}" = "main" ]; then
@@ -295,11 +314,11 @@ tasks:
             echo "https://raw.githubusercontent.com/cloudnative-pg/artifacts/release-{{ .CNPG_RELEASE }}/manifests/operator-manifest.yaml"
           fi
     env:
-      DOCKER_HOST: '{{ .DOCKER_CONTEXT_HOST }}'
       _EXPERIMENTAL_DAGGER_RUNNER_HOST: container://{{ .DAGGER_ENGINE_NAME }}
     cmds:
       - |
-        KUBECONFIG=$(kind get kubeconfig --internal --name "{{ .KIND_CLUSTER_NAME }}")
+        KUBECONFIG=$({{ .KIND_TOOLBOX }} \
+          with-exec --args="kind","get","kubeconfig","--internal","--name","{{ .KIND_CLUSTER_NAME }}" stdout)
 
         dagger core container from --address=alpine/kubectl:{{ .KUBECTL_VERSION }} \
         with-new-file --contents "${KUBECONFIG}" --path /root/.kube/config --expand \
@@ -321,7 +340,8 @@ tasks:
         --use-entrypoint sync
     status:
       - |
-        KUBECONFIG=$(kind get kubeconfig --internal --name "{{ .KIND_CLUSTER_NAME }}")
+        KUBECONFIG=$({{ .KIND_TOOLBOX }} \
+          with-exec --args="kind","get","kubeconfig","--internal","--name","{{ .KIND_CLUSTER_NAME }}" stdout)
         dagger core container from --address=alpine/kubectl:{{ .KUBECTL_VERSION }} \
         with-new-file --contents "${KUBECONFIG}" --path /root/.kube/config --expand \
         with-env-variable --name=CACHEBUSTER --value="$(date)" \
@@ -336,13 +356,12 @@ tasks:
     vars:
       KUBECONFIG_PATH: '{{.KUBECONFIG_PATH| default "~/.kube/config"}}'
       INTERNAL: '{{.INTERNAL| default "false"}}'
-      DOCKER_CONTEXT_HOST:
-        sh: docker context inspect -f {{`'{{.Endpoints.docker.Host}}'`}} $(docker context show)
     env:
-      DOCKER_HOST: '{{ .DOCKER_CONTEXT_HOST }}'
+      _EXPERIMENTAL_DAGGER_RUNNER_HOST: container://{{ .DAGGER_ENGINE_NAME }}
     cmds:
       - |
-        CONFIG=$(kind get kubeconfig --name "{{ .KIND_CLUSTER_NAME }}" --internal={{ .INTERNAL }})
+        CONFIG=$({{ .KIND_TOOLBOX }} \
+          with-exec --args="kind","get","kubeconfig","--name","{{ .KIND_CLUSTER_NAME }}","--internal={{ .INTERNAL }}" stdout)
         mkdir -p $(dirname {{ .KUBECONFIG_PATH }})
         echo "${CONFIG}" > {{ .KUBECONFIG_PATH }}
 
@@ -466,13 +485,14 @@ tasks:
 
   e2e:cleanup:
     desc: Cleanup E2E resources
-    vars:
-      DOCKER_CONTEXT_HOST:
-        sh: docker context inspect -f {{`'{{.Endpoints.docker.Host}}'`}} $(docker context show)
+    deps:
+      - e2e:start-dagger-engine
     env:
-      DOCKER_HOST: '{{ .DOCKER_CONTEXT_HOST }}'
+      _EXPERIMENTAL_DAGGER_RUNNER_HOST: container://{{ .DAGGER_ENGINE_NAME }}
     cmds:
-      - kind delete cluster --name {{ .KIND_CLUSTER_NAME }} || true
+      - >
+        {{ .KIND_TOOLBOX }}
+        with-exec --args="kind","delete","cluster","--name","{{ .KIND_CLUSTER_NAME }}" sync || true
       - docker rm -fv {{ .DAGGER_ENGINE_NAME }} || true
       - docker rm -fv {{ .REGISTRY_NAME }} || true
       - docker network rm {{ .E2E_NETWORK }} || true
