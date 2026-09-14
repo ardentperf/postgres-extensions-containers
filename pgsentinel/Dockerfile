@@ -22,11 +22,9 @@ COPY --from=builder /usr/share/doc/postgresql-${PG_MAJOR}/copyright /licenses/po
 
 # Libraries
 COPY --from=builder /usr/lib/postgresql/${PG_MAJOR}/lib/pgsentinel* /lib/
-COPY --from=builder /usr/lib/postgresql/${PG_MAJOR}/lib/pg_stat_statements* /lib/
 COPY --from=builder /usr/lib/postgresql/${PG_MAJOR}/lib/bitcode/ /lib/bitcode/
 
 # Share
 COPY --from=builder /usr/share/postgresql/${PG_MAJOR}/extension/pgsentinel* /share/extension/
-COPY --from=builder /usr/share/postgresql/${PG_MAJOR}/extension/pg_stat_statements* /share/extension/
 
 USER 65532:65532
