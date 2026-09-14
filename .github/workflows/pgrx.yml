@@ -1,7 +1,6 @@
 name: PGRX workflow stub
 
 on:
-  push:
   workflow_dispatch:
     inputs:
       extension_name:
