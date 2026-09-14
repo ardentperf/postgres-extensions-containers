@@ -114,7 +114,7 @@ function getExtensionSqlVersion {
 
 function getExtensionVersion {
   params = [distro, pgVersion]
-  result = replace(regex("^(?:[0-9]+:)?[0-9]+(?:\\.[0-9]+)*", getExtensionPackage(distro, pgVersion)), ":", "-")
+  result = getExtensionPackage(distro, pgVersion)
 }
 
 function getBaseImage {

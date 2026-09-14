@@ -140,9 +140,11 @@ tasks:
         task: update-os-libs
 
   create-extension:
-    desc: Scaffold a new extension directory. Usage - task create-extension NAME=myextension
+    desc: Scaffold a new extension directory. Usage - task create-extension NAME=myextension [BUILD_SYSTEM=pgrx]
+    vars:
+      BUILD_SYSTEM: '{{.BUILD_SYSTEM | default ""}}'
     cmds:
-      - dagger call -sm ./dagger/maintenance/ create --name {{.NAME}} export --path ./{{.NAME}}
+      - dagger call -sm ./dagger/maintenance/ create --name {{.NAME}} {{if eq .BUILD_SYSTEM "pgrx"}}--templates-dir=./pgrx/templates{{end}} export --path ./{{.NAME}}
     preconditions:
       - sh: test -n "{{.NAME}}"
         msg: 'NAME variable is required. Usage - task create-extension NAME=myextension'

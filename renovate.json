@@ -28,6 +28,33 @@
       "autoReplaceStringTemplate": "# renovate: datasource=github-tags depName={{{depName}}} versioning=semver\\nRUN curl --fail --location --silent --show-error \"https://github.com/{{{depName}}}/archive/{{{newDigest}}}.tar.gz\" -o /tmp/source.tar.gz # v{{{newValue}}}"
     },
     {
+      "description": "updates the jsonschema pgrx Rust and reporting tool pins",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "pgrx/install-pgrx-build-environment.sh"
+      ],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>[a-z-.]+)\\s+depName=(?<depName>[^\\s]+)\\s+versioning=(?<versioning>[^\\s]+)\\s*\\n\\s*(?<variable>RUST_VERSION|CARGO_CYCLONEDX_VERSION|CARGO_ABOUT_VERSION)=(?<currentValue>[^\\s]+)"
+      ],
+      "datasourceTemplate": "{{{datasource}}}",
+      "depNameTemplate": "{{{depName}}}",
+      "versioningTemplate": "{{{versioning}}}",
+      "autoReplaceStringTemplate": "# renovate: datasource={{{datasource}}} depName={{{depName}}} versioning={{{versioning}}}\\n{{{variable}}}={{{newValue}}}"
+    },
+    {
+      "description": "updates the jsonschema GitHub source tag",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "pg-jsonschema/metadata.hcl"
+      ],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=github-tags\\s+depName=(?<depName>[^\\s]+)\\s+versioning=semver\\s*\\n\\s*package\\s*=\\s*\\\"v(?<currentValue>[^\\\"]+)\\\""
+      ],
+      "datasourceTemplate": "github-tags",
+      "versioningTemplate": "semver",
+      "autoReplaceStringTemplate": "# renovate: datasource=github-tags depName={{{depName}}} versioning=semver\\n        package = \"v{{{newValue}}}\""
+    },
+    {
       "description": "updates the deb package versions in the metadata.hcl files",
       "customType": "regex",
       "managerFilePatterns": [

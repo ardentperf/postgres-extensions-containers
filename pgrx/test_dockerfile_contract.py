@@ -16,15 +16,50 @@ class DockerfileContractTest(unittest.TestCase):
         }
         for target, report_path in expected.items():
             with self.subTest(target=target):
-                dockerfile = (ROOT / target / "Dockerfile").read_text(encoding="utf-8")
+                files = [ROOT / target / "Dockerfile"]
+                dockerfile = files[0].read_text(encoding="utf-8")
+                helper = ROOT / "pgrx" / "install-pgrx-build-environment.sh"
+                if helper.exists() and helper.name in dockerfile:
+                    files.append(helper)
+                dockerfile = "\n".join(
+                    path.read_text(encoding="utf-8") for path in files
+                )
                 self.assertIn(
                     f'cyclonedx_file="{report_path}"',
                     dockerfile,
                 )
                 self.assertNotIn(
-                    'find /workspace/source -type f -name pgrx.json',
+                    'find /build -type f -name pgrx.json',
                     dockerfile,
                 )
+                if target == "pg-jsonschema":
+                    helper_text = helper.read_text(encoding="utf-8")
+                    self.assertNotIn("/build", helper_text)
+                    self.assertIn(
+                        'source_dir="$(dirname "${lock_file}")"',
+                        helper_text,
+                    )
+                    self.assertIn(
+                        'sbom_dir="${source_dir}/pgrx-sbom"',
+                        helper_text,
+                    )
+                    self.assertIn(
+                        'license_dir="${source_dir}/pgrx-licenses/rust"',
+                        helper_text,
+                    )
+                    self.assertNotIn("/payload", dockerfile)
+                    self.assertIn(
+                        "RUN cargo pgrx package \\",
+                        dockerfile,
+                    )
+                    self.assertIn(
+                        "COPY --from=builder /build/target/release/pg_jsonschema-pg${PG_MAJOR}/usr/lib/postgresql/${PG_MAJOR}/lib/pg_jsonschema.so /lib/",
+                        dockerfile,
+                    )
+                    self.assertIn(
+                        "COPY --from=builder /build/target/release/pg_jsonschema-pg${PG_MAJOR}/usr/share/postgresql/${PG_MAJOR}/extension/pg_jsonschema* /share/extension/",
+                        dockerfile,
+                    )
 
 
 if __name__ == "__main__":

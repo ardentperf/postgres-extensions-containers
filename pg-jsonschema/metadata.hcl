@@ -10,7 +10,7 @@ metadata = {
   postgresql_parameters    = {}
   extension_control_path   = []
   dynamic_library_path     = []
-  ld_library_path          = ["system"]
+  ld_library_path          = []
   bin_path                 = []
   env                      = {}
   auto_update_os_libs      = false
@@ -22,13 +22,14 @@ metadata = {
   versions = {
     bookworm = {
       "18" = {
-        package = "0.3.4"
+        package = "v0.3.4"
         sql     = "0.3.4"
       }
     }
     trixie = {
       "18" = {
-        package = "0.3.4"
+        # renovate: datasource=github-tags depName=supabase/pg_jsonschema versioning=semver
+        package = "v0.3.4"
         sql     = "0.3.4"
       }
     }

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import hashlib
 import importlib.util
 import json
 import tempfile
@@ -18,8 +17,6 @@ class PgrxCompositionTest(unittest.TestCase):
     def test_merges_cargo_packages_edges_license_text_and_annotation(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            dockerfile = root / "Dockerfile"
-            dockerfile.write_text("FROM scratch\n", encoding="utf-8")
             cyclonedx = root / "cyclonedx.json"
             cyclonedx.write_text(json.dumps({
                 "bomFormat": "CycloneDX",
@@ -57,21 +54,6 @@ class PgrxCompositionTest(unittest.TestCase):
                 "crates": [{"name": "serde", "version": "1.0.0", "license": "MIT"}],
                 "licenses": [{"id": "MIT", "name": "MIT License", "text": "full MIT text"}],
             }), encoding="utf-8")
-            metadata = root / "pgrx-build.json"
-            metadata.write_text(json.dumps({
-                "source": {
-                    "archiveUrl": "https://github.com/example/example/archive/abc.tar.gz",
-                    "commit": "abc",
-                    "tag": "v1.0.0",
-                    "archiveSha256": "archive",
-                    "cargoLockSha256": "lock",
-                },
-                "cargo": {"package": "example", "features": ["pg18"]},
-                "reports": {
-                    "cyclonedxSha256": hashlib.sha256(cyclonedx.read_bytes()).hexdigest(),
-                    "cargoAboutSha256": hashlib.sha256(about.read_bytes()).hexdigest(),
-                },
-            }), encoding="utf-8")
             document = {
                 "spdxVersion": "SPDX-2.3",
                 "SPDXID": "SPDXRef-DOCUMENT",
@@ -87,10 +69,8 @@ class PgrxCompositionTest(unittest.TestCase):
             }
             output = module.enrich(
                 document,
-                [("linux/amd64", cyclonedx, about, metadata)],
+                [("linux/amd64", cyclonedx, about)],
                 extension_name="example",
-                dockerfile=dockerfile,
-                wrapper_revision="revision",
             )
 
             self.assertEqual(
@@ -106,21 +86,22 @@ class PgrxCompositionTest(unittest.TestCase):
                 output["annotations"][0]["comment"].split(" ", 1)[1]
             ))
 
-    def test_rejects_report_hash_mismatch(self):
+    def test_rejects_invalid_cyclonedx_report(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for name, content in (("cyclonedx.json", {"bomFormat": "CycloneDX", "specVersion": "1.5"}),
-                                  ("cargo-about.json", {"crates": [], "licenses": []}),
-                                  ("Dockerfile", "FROM scratch\n")):
-                path = root / name
-                path.write_text(content if isinstance(content, str) else json.dumps(content), encoding="utf-8")
-            metadata = root / "metadata.json"
-            metadata.write_text(json.dumps({"source": {}, "cargo": {}, "reports": {"cyclonedxSha256": "wrong"}}), encoding="utf-8")
+            (root / "cyclonedx.json").write_text(
+                json.dumps({"bomFormat": "not-cyclonedx", "specVersion": "1.5"}),
+                encoding="utf-8",
+            )
+            (root / "cargo-about.json").write_text(
+                json.dumps({"crates": [], "licenses": []}),
+                encoding="utf-8",
+            )
             with self.assertRaises(ValueError):
                 module.enrich(
                     {"SPDXID": "SPDXRef-DOCUMENT", "packages": [], "files": [], "relationships": [], "annotations": [{"spdxElementId": "SPDXRef-DOCUMENT", "annotationType": "OTHER", "comment": module.COMPOSITION_NAMESPACE + " {}"}]},
-                    [("linux/amd64", root / "cyclonedx.json", root / "cargo-about.json", metadata)],
-                    extension_name="example", dockerfile=root / "Dockerfile", wrapper_revision="revision",
+                    [("linux/amd64", root / "cyclonedx.json", root / "cargo-about.json")],
+                    extension_name="example",
                 )
 
 
