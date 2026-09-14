@@ -11,15 +11,15 @@ PostgreSQL versions and Debian distributions.
 -->
 
 [{{ replaceAll .Name "-" "_" }}](https://github.com/<owner>/<repo>) is a
-PostgreSQL extension that provides [describe the main functionality here]. The
-image is built with pgrx from the upstream `<release-tag>` release.
+PostgreSQL extension that provides [describe the main functionality here].
 
 ## Usage
 
 <!--
 TODO: Customize the image tag, extension names, SQL version, and Renovate
-instructions below. The image tag preserves the exact pgrx source tag; the
-Database version is the SQL extension version and may omit a leading `v`.
+instructions below. Use the package version from `metadata.hcl` for the image
+tag. The Database version is the SQL extension version and may omit a leading
+`v`.
 -->
 
 ### 1. Add the {{ .Name }} extension image to your Cluster
@@ -44,7 +44,7 @@ spec:
     - name: {{ .Name }}
       image:
         # TODO: Keep this image tag synchronized with metadata.hcl.
-        reference: ghcr.io/cnpg-extensions/{{ .Name }}:<release-tag>-{{ .DefaultVersion }}-{{ .DefaultDistro }}
+        reference: ghcr.io/cnpg-extensions/{{ .Name }}:<package-version>-{{ .DefaultVersion }}-{{ .DefaultDistro }}
 ```
 
 ### 2. Enable the extension in a database

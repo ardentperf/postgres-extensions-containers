@@ -42,10 +42,10 @@
       "autoReplaceStringTemplate": "# renovate: datasource={{{datasource}}} depName={{{depName}}} versioning={{{versioning}}}\\n{{{variable}}}={{{newValue}}}"
     },
     {
-      "description": "updates the jsonschema GitHub source tag",
+      "description": "updates pgrx GitHub source tags",
       "customType": "regex",
       "managerFilePatterns": [
-        "pg-jsonschema/metadata.hcl"
+        "**/metadata.hcl"
       ],
       "matchStrings": [
         "#\\s*renovate:\\s*datasource=github-tags\\s+depName=(?<depName>[^\\s]+)\\s+versioning=semver\\s*\\n\\s*package\\s*=\\s*\\\"v(?<currentValue>[^\\\"]+)\\\""

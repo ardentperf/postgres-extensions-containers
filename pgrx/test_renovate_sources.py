@@ -32,6 +32,12 @@ class RenovateSourceTest(unittest.TestCase):
                     content,
                 )
                 continue
+            if target == "pg-session-jwt":
+                self.assertIn(
+                    "ADD https://github.com/neondatabase/pg_session_jwt/archive/${EXT_VERSION}.tar.gz /tmp/source.tar.gz",
+                    content,
+                )
+                continue
             match = None
             for source_re in SOURCE_RES:
                 match = source_re.search(content)
@@ -54,6 +60,10 @@ class RenovateSourceTest(unittest.TestCase):
             if target == "pg-jsonschema":
                 self.assertIn('package = "v0.3.4"', metadata)
                 self.assertIn('sql     = "0.3.4"', metadata)
+                continue
+            if target == "pg-session-jwt":
+                self.assertIn('package = "v0.5.0"', metadata)
+                self.assertIn('sql     = "0.5.0"', metadata)
                 continue
             version = re.search(r"#\s+v(\d+\.\d+\.\d+)", dockerfile).group(1)
             package_version = version
