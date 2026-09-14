@@ -10,14 +10,21 @@ ARG EXT_VERSION
 
 USER 0
 
-RUN apt-get update && \
+COPY scripts/stage_system_libs.sh /usr/local/bin/stage_system_libs.sh
+
+RUN set -eux && \
+	ldconfig -p | awk '{print $NF}' | grep '^/' | sort | uniq > /tmp/base-image-libs.out && \
+	apt-get update && \
 	apt-get install -y --no-install-recommends "postgresql-${PG_MAJOR}-mysql-fdw=${EXT_VERSION}"
+
+RUN /usr/local/bin/stage_system_libs.sh \
+	/usr/lib/postgresql/${PG_MAJOR}/lib/mysql_fdw.so \
+	/usr/lib/*-linux-gnu/libmysqlclient.so
 
 FROM scratch
 ARG PG_MAJOR
 
 # Licenses
-COPY --parents --from=builder /usr/share/doc/./libmariadb3/copyright /licenses/
 COPY --from=builder /usr/share/doc/postgresql-${PG_MAJOR}-mysql-fdw/copyright /licenses/postgresql-${PG_MAJOR}-mysql-fdw/
 
 # Libraries
@@ -25,8 +32,7 @@ COPY --from=builder /usr/lib/postgresql/${PG_MAJOR}/lib/mysql_fdw.so /lib/
 COPY --from=builder /usr/lib/postgresql/${PG_MAJOR}/lib/bitcode/ /lib/bitcode/
 
 # System libs (includes the dlopen-loaded MariaDB client and MySQL alias)
-COPY --from=builder /lib/*-linux-gnu/libmariadb.so.3 /system/
-COPY --from=builder /lib/*-linux-gnu/libmysqlclient.so /system/
+COPY --from=builder /system /system/
 
 # Share
 COPY --from=builder /usr/share/postgresql/${PG_MAJOR}/extension/mysql_fdw* /share/extension/

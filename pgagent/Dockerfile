@@ -10,23 +10,26 @@ ARG EXT_VERSION
 
 USER 0
 
-RUN apt-get update && \
+COPY scripts/stage_system_libs.sh /usr/local/bin/stage_system_libs.sh
+
+RUN set -eux && \
+	ldconfig -p | awk '{print $NF}' | grep '^/' | sort | uniq > /tmp/base-image-libs.out && \
+	apt-get update && \
 	apt-get install -y --no-install-recommends "pgagent=${EXT_VERSION}"
+
+RUN /usr/local/bin/stage_system_libs.sh /usr/bin/pgagent
 
 FROM scratch
 ARG PG_MAJOR
 
 # Licenses
-COPY --parents --from=builder /usr/share/doc/./libboost-filesystem1.*/copyright /licenses/
-COPY --parents --from=builder /usr/share/doc/./libboost-thread1.*/copyright /licenses/
 COPY --from=builder /usr/share/doc/pgagent/copyright /licenses/pgagent/
 
 # Binary
 COPY --from=builder /usr/bin/pgagent /bin/
 
 # System libs
-COPY --from=builder /lib/*-linux-gnu/libboost_filesystem.so.* /system/
-COPY --from=builder /lib/*-linux-gnu/libboost_thread.so.* /system/
+COPY --from=builder /system /system/
 
 # Share
 COPY --from=builder /usr/share/postgresql/${PG_MAJOR}/extension/pgagent* /share/extension/
