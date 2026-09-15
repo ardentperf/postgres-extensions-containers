@@ -148,7 +148,6 @@ def run_command_with_progress(
         # Suppress individual paths, retaining a bounded diagnostic tail.
         completed = set()
         tail = deque(maxlen=100)
-        last_report = started
         last_count = 0
         progress(f"ScanCode: 0 of {license_chunks:,} license chunks scanned")
         for line in process.stdout:
@@ -156,13 +155,12 @@ def run_command_with_progress(
             if line.startswith("Scanned: "):
                 completed.add(line.removeprefix("Scanned: ").strip())
                 count = len(completed)
-                now = time.monotonic()
                 if count != last_count and (
-                    now - last_report >= PROGRESS_INTERVAL_SECONDS
+                    count % 100 == 0
                     or count == license_chunks
                 ):
                     progress(f"ScanCode: {count:,} of {license_chunks:,} license chunks scanned")
-                    last_report, last_count = now, count
+                    last_count = count
         process.stdout.close()
         process.wait()
         if len(completed) != last_count:
