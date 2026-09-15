@@ -38,6 +38,7 @@ PLATFORM_ARCHITECTURES = {
 INTOTO_STATEMENT_TYPE = "https://in-toto.io/Statement/v1"
 SPDX_PREDICATE_TYPE = "https://spdx.dev/Document"
 PROGRESS_INTERVAL_SECONDS = 30
+SCANCODE_PROGRESS_INTERVAL_SECONDS = 10
 
 
 def require_directory(value: str | None, variable: str) -> Path:
@@ -158,7 +159,7 @@ def run_command_with_progress(
                 count = len(completed)
                 now = time.monotonic()
                 if count != last_count and (
-                    now - last_report >= PROGRESS_INTERVAL_SECONDS
+                    now - last_report >= SCANCODE_PROGRESS_INTERVAL_SECONDS
                     or count == license_chunks
                 ):
                     progress(f"ScanCode: {count:,} of {license_chunks:,} license chunks scanned")

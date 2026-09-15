@@ -163,7 +163,7 @@ version is explicitly `unknown`, including when running the composer directly.
 During generation, BuildKit logs show phase start/completion and elapsed time.
 Long Syft subprocesses emit a heartbeat every 30 seconds. ScanCode reports
 completed work as `ScanCode: 240 of 1,200 license chunks scanned`, at most once
-every 30 seconds while work advances, plus the initial and final counts. The
+every 10 seconds while work advances, plus the initial and final counts. The
 count comes from ScanCode's per-file completion events; scanner errors still
 fail the build even if all chunks were processed. Also,
 license-file preparation reports its file and chunk counts.
