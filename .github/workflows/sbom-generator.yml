@@ -10,6 +10,18 @@ on:
     paths:
       - 'sbom-generator/**'
       - '.github/workflows/sbom-generator.yml'
+  workflow_dispatch:
+    inputs:
+      local:
+        description: "Push to the local test registry instead of GHCR"
+        required: false
+        default: false
+        type: boolean
+      publish:
+        description: "Publish the generator image to GHCR (manual testing only)"
+        required: false
+        default: false
+        type: boolean
 
 permissions: {}
 
@@ -33,15 +45,18 @@ jobs:
         run: python3 -m unittest discover -s sbom-generator/tests -p 'test_*.py'
 
       - name: Set up QEMU
+        if: ${{ inputs.local != true }}
         uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a # v4
         with:
           platforms: linux/arm64
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+        with:
+          driver-opts: ${{ inputs.local && 'network=host' || '' }}
 
       - name: Log in to GHCR
-        if: github.event_name == 'push'
+        if: ${{ (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish == true)) && inputs.local != true }}
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           registry: ghcr.io
@@ -51,12 +66,22 @@ jobs:
       - name: Build generator
         env:
           EVENT_NAME: ${{ github.event_name }}
+          LOCAL: ${{ inputs.local }}
+          PUBLISH: ${{ inputs.publish }}
         run: |
-          image="ghcr.io/cnpg-extensions/cnpg-sbom-generator"
+          registry="ghcr.io/cnpg-extensions"
+          if [[ "$LOCAL" == true ]]; then
+            registry="127.0.0.1:5000"
+          fi
+          image="$registry/cnpg-sbom-generator"
+          platforms="linux/amd64,linux/arm64"
+          if [[ "$LOCAL" == true ]]; then
+            platforms="linux/amd64"
+          fi
           options=()
-          if [[ "$EVENT_NAME" == push ]]; then options+=(--push); fi
+          if [[ "$EVENT_NAME" == push || "$PUBLISH" == true || "$LOCAL" == true ]]; then options+=(--push); fi
           docker buildx build \
-            --platform linux/amd64,linux/arm64 \
+            --platform "$platforms" \
             --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
             --tag "$image:latest" \
             --tag "$image:sha-${GITHUB_SHA}" \
