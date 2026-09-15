@@ -212,16 +212,12 @@ def scan_builder(builder: Path, temporary: Path) -> dict[str, Any]:
 def scan_licenses(final_root: Path, temporary: Path) -> dict[str, Any]:
     licenses = final_root / "licenses"
     if not licenses.exists():
-        progress("no /licenses directory; skipping ScanCode")
         return {"files": []}
     scancode = shutil.which("scancode")
     if not scancode:
         raise RuntimeError("scancode is required when the final payload has /licenses")
     scan_root = prepare_license_scan_root(final_root, temporary)
     output = temporary / "scancode.json"
-    license_chunks = sum(1 for path in scan_root.rglob("*") if path.is_file())
-    progress(f"ScanCode license scan ({license_chunks:,} license chunks to scan in total) started")
-    started = time.monotonic()
     try:
         subprocess.run(
             [
@@ -240,7 +236,6 @@ def scan_licenses(final_root: Path, temporary: Path) -> dict[str, Any]:
         raise RuntimeError("scancode is required when the final payload has /licenses") from error
     except subprocess.CalledProcessError as error:
         raise RuntimeError(f"ScanCode failed with exit code {error.returncode}; see output above") from error
-    progress(f"ScanCode processed {license_chunks:,} license chunks in {time.monotonic() - started:.1f}s")
     try:
         with output.open(encoding="utf-8") as stream:
             report = json.load(stream)
@@ -249,7 +244,6 @@ def scan_licenses(final_root: Path, temporary: Path) -> dict[str, Any]:
     if not isinstance(report, dict):
         raise RuntimeError("scancode output is not a JSON object")
     normalize_scancode_report_paths(report, scan_root, final_root)
-    progress(f"ScanCode reported {len(report.get('files', []))} files")
     return report
 
 

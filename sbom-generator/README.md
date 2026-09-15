@@ -161,8 +161,7 @@ when building from an unchanged checkout. Without a supplied revision, the
 version is explicitly `unknown`, including when running the composer directly.
 
 During generation, BuildKit logs show phase start/completion and elapsed time.
-Long Syft subprocesses emit a heartbeat every 10 seconds. Each ScanCode invocation
-logs its start and a completion message with the chunk count and elapsed time.
+Long Syft subprocesses emit a heartbeat every 10 seconds.
 ScanCode's output and diagnostics go directly to stdout without filtering.
 ScanCode controls its own progress display; non-terminal logs may omit per-file messages.
 License-file preparation reports its file and chunk counts.
