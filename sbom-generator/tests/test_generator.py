@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import hashlib
-import io
 import json
 import os
 import subprocess
@@ -95,6 +94,8 @@ class GeneratorTest(unittest.TestCase):
             commands = []
 
             def fake_csplit(command, **_kwargs):
+                if command[0] == "scancode":
+                    return fake_scancode(command, **_kwargs)
                 commands.append(command)
                 prefix = Path(command[command.index("-f") + 1])
                 prefix.with_name("license-00").write_text("license text")
@@ -112,19 +113,10 @@ class GeneratorTest(unittest.TestCase):
                         }],
                     }],
                 }))
-                class FakeProcess:
-                    returncode = 0
-                    stdout = io.StringIO("Scanned: licenses/copyright/license-00\n")
-
-                    def wait(self):
-                        return 0
-
-                return FakeProcess()
+                return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
             with patch("generator.shutil.which", return_value="scancode"), patch(
                 "generator.subprocess.run", side_effect=fake_csplit
-            ), patch(
-                "generator.subprocess.Popen", side_effect=fake_scancode
             ):
                 report = scan_licenses(root, temporary)
 
@@ -136,28 +128,6 @@ class GeneratorTest(unittest.TestCase):
         split_command = next(command for command in commands if command[0] == "csplit")
         self.assertIn("/^License:/", split_command)
         self.assertIn("{*}", split_command)
-
-    def test_scancode_counts_unique_completion_events_and_preserves_failure(self):
-        for exit_code in (0, 1):
-            with self.subTest(exit_code=exit_code):
-                messages = []
-                command = [sys.executable, "-c", (
-                    "import sys; "
-                    "print('Setup plugins...', file=sys.stderr); "
-                    "print('Scanned: /licenses/a', file=sys.stderr); "
-                    "print('Scanned: /licenses/a', file=sys.stderr); "
-                    "print('Scanned: /licenses/b', file=sys.stderr); "
-                    "print('scan diagnostic', file=sys.stderr); "
-                    f"sys.exit({exit_code})"
-                )]
-                with patch("generator.progress", side_effect=messages.append):
-                    if exit_code:
-                        with self.assertRaisesRegex(RuntimeError, "scan diagnostic"):
-                            run_command_with_progress(command, "ScanCode", license_chunks=1200)
-                    else:
-                        run_command_with_progress(command, "ScanCode", license_chunks=1200)
-                self.assertIn("ScanCode: 2 of 1,200 license chunks scanned", messages)
-                self.assertFalse(any("still running" in message for message in messages))
 
 
 if __name__ == "__main__":
