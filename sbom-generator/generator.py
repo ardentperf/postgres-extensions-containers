@@ -220,7 +220,7 @@ def scan_licenses(final_root: Path, temporary: Path) -> dict[str, Any]:
     scan_root = prepare_license_scan_root(final_root, temporary)
     output = temporary / "scancode.json"
     try:
-        input_files = sum(1 for path in scan_root.rglob("*") if path.is_file())
+        license_chunks = sum(1 for path in scan_root.rglob("*") if path.is_file())
         run_command_with_progress(
             [
                 scancode,
@@ -230,7 +230,7 @@ def scan_licenses(final_root: Path, temporary: Path) -> dict[str, Any]:
                 str(output),
                 str(scan_root),
             ],
-            f"ScanCode license scan ({input_files} input files)",
+            f"ScanCode license scan ({license_chunks} license chunks to scan in total)",
         )
     except FileNotFoundError as error:
         raise RuntimeError("scancode is required when the final payload has /licenses") from error
