@@ -19,6 +19,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -35,6 +36,7 @@ PLATFORM_ARCHITECTURES = {
 
 INTOTO_STATEMENT_TYPE = "https://in-toto.io/Statement/v1"
 SPDX_PREDICATE_TYPE = "https://spdx.dev/Document"
+PROGRESS_INTERVAL_SECONDS = 30
 
 
 def require_directory(value: str | None, variable: str) -> Path:
@@ -119,19 +121,58 @@ def final_inventory(root: Path) -> dict[str, Any]:
     return {"files": records}
 
 
-def run_json_command(command: Sequence[str], output: Path) -> dict[str, Any]:
+def progress(message: str) -> None:
+    print(f"sbom-generator: {message}", file=sys.stderr, flush=True)
+
+
+def run_command_with_progress(
+    command: Sequence[str], label: str
+) -> subprocess.CompletedProcess:
+    """Run a scanner while keeping long-running phases visible in BuildKit logs."""
+
+    progress(f"{label} started")
+    started = time.monotonic()
     try:
-        subprocess.run(
-            [*command, f"spdx-json={output}"],
-            check=True,
-            capture_output=True,
+        process = subprocess.Popen(
+            list(command),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
+        )
+    except FileNotFoundError:
+        raise
+
+    while True:
+        try:
+            stdout, stderr = process.communicate(timeout=PROGRESS_INTERVAL_SECONDS)
+            break
+        except subprocess.TimeoutExpired:
+            progress(
+                f"{label} still running "
+                f"({time.monotonic() - started:.0f}s elapsed)"
+            )
+
+    result = subprocess.CompletedProcess(
+        list(command), process.returncode, stdout, stderr
+    )
+    elapsed = time.monotonic() - started
+    if result.returncode:
+        detail = (result.stderr or result.stdout or "scanner failed").strip()
+        raise RuntimeError(f"{' '.join(command)} failed: {detail}")
+    progress(f"{label} complete in {elapsed:.1f}s")
+    return result
+
+
+def run_json_command(
+    command: Sequence[str], output: Path, label: str
+) -> dict[str, Any]:
+    try:
+        run_command_with_progress(
+            [*command, f"spdx-json={output}"],
+            label,
         )
     except FileNotFoundError as error:
         raise RuntimeError(f"required scanner is unavailable: {command[0]}") from error
-    except subprocess.CalledProcessError as error:
-        detail = (error.stderr or error.stdout or "scanner failed").strip()
-        raise RuntimeError(f"{' '.join(command)} failed: {detail}") from error
     try:
         with output.open(encoding="utf-8") as stream:
             document = json.load(stream)
@@ -152,21 +193,26 @@ def scan_builder(builder: Path, temporary: Path) -> dict[str, Any]:
             document = json.load(stream)
         if not isinstance(document, dict):
             raise RuntimeError("BUILDKIT_BUILDER_SPDX is not a JSON object")
+        progress("using supplied builder SPDX fixture")
         return document
 
     syft = shutil.which("syft")
     if not syft:
         raise RuntimeError("syft is required to scan the mounted builder stage")
     output = temporary / "builder.spdx.json"
-    return run_json_command(
+    document = run_json_command(
         [syft, f"dir:{builder}", "--scope", "all-layers", "--quiet", "--output"],
         output,
+        "Syft builder scan",
     )
+    progress(f"Syft found {len(document.get('packages', []))} builder packages")
+    return document
 
 
 def scan_licenses(final_root: Path, temporary: Path) -> dict[str, Any]:
     licenses = final_root / "licenses"
     if not licenses.exists():
+        progress("no /licenses directory; skipping ScanCode")
         return {"files": []}
     scancode = shutil.which("scancode")
     if not scancode:
@@ -174,7 +220,8 @@ def scan_licenses(final_root: Path, temporary: Path) -> dict[str, Any]:
     scan_root = prepare_license_scan_root(final_root, temporary)
     output = temporary / "scancode.json"
     try:
-        subprocess.run(
+        input_files = sum(1 for path in scan_root.rglob("*") if path.is_file())
+        run_command_with_progress(
             [
                 scancode,
                 "--license",
@@ -183,13 +230,10 @@ def scan_licenses(final_root: Path, temporary: Path) -> dict[str, Any]:
                 str(output),
                 str(scan_root),
             ],
-            check=True,
-            capture_output=True,
-            text=True,
+            f"ScanCode license scan ({input_files} input files)",
         )
-    except subprocess.CalledProcessError as error:
-        detail = (error.stderr or error.stdout or "scancode failed").strip()
-        raise RuntimeError(f"scancode failed: {detail}") from error
+    except FileNotFoundError as error:
+        raise RuntimeError("scancode is required when the final payload has /licenses") from error
     try:
         with output.open(encoding="utf-8") as stream:
             report = json.load(stream)
@@ -198,6 +242,7 @@ def scan_licenses(final_root: Path, temporary: Path) -> dict[str, Any]:
     if not isinstance(report, dict):
         raise RuntimeError("scancode output is not a JSON object")
     normalize_scancode_report_paths(report, scan_root, final_root)
+    progress(f"ScanCode reported {len(report.get('files', []))} files")
     return report
 
 
@@ -211,9 +256,13 @@ def prepare_license_scan_root(final_root: Path, temporary: Path) -> Path:
 
     licenses = final_root / "licenses"
     scan_root = temporary / "license-chunks" / "licenses"
+    started = time.monotonic()
+    license_file_count = 0
+    chunk_count = 0
     for license_file in sorted(licenses.rglob("*")):
         if license_file.is_symlink() or not license_file.is_file():
             continue
+        license_file_count += 1
         relative = license_file.relative_to(licenses)
         chunk_directory = scan_root / relative
         chunk_directory.mkdir(parents=True, exist_ok=True)
@@ -239,6 +288,19 @@ def prepare_license_scan_root(final_root: Path, temporary: Path) -> Path:
         if result.returncode:
             detail = (result.stderr or result.stdout or "csplit failed").strip()
             raise RuntimeError(f"csplit failed for {license_file}: {detail}")
+        chunk_count += sum(
+            1 for path in chunk_directory.glob("license-*") if path.is_file()
+        )
+        if license_file_count % 100 == 0:
+            progress(
+                f"prepared {license_file_count} license files "
+                f"({chunk_count} ScanCode chunks, "
+                f"{time.monotonic() - started:.1f}s elapsed)"
+            )
+    progress(
+        f"prepared {license_file_count} license files into {chunk_count} "
+        f"ScanCode chunks in {time.monotonic() - started:.1f}s"
+    )
     return scan_root
 
 
@@ -341,12 +403,16 @@ def generate() -> Path:
         raise RuntimeError(f"scanner output directory must be empty: {destination}")
 
     extension_name = os.getenv("SBOM_EXTENSION_NAME", "extension")
+    progress(f"starting SBOM for {extension_name}")
     with tempfile.TemporaryDirectory(prefix="cnpg-sbom-") as temporary_name:
         temporary = Path(temporary_name)
         builder_document = scan_builder(builder, temporary)
         platform = infer_platform(builder_document)
+        progress(f"target platform: {platform}")
         inventory = final_inventory(source)
+        progress(f"final payload inventory contains {len(inventory['files'])} files")
         report = scan_licenses(source, temporary)
+        progress("composing SPDX document")
         evidence = {
             "builderSha256": sha256_file(Path(os.getenv("BUILDKIT_BUILDER_SPDX")))
             if os.getenv("BUILDKIT_BUILDER_SPDX")
@@ -379,6 +445,7 @@ def generate() -> Path:
         set_document_namespace(predicate, extension_name, platform)
         statement = statement_for(predicate)
         output = destination / "final-payload.spdx.json"
+        progress("writing SPDX attestation")
         with output.open("w", encoding="utf-8") as stream:
             json.dump(statement, stream, indent=2, sort_keys=True)
             stream.write("\n")

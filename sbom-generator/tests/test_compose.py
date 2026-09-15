@@ -88,6 +88,26 @@ class ComposeTest(unittest.TestCase):
         self.assertNotIn("build-only", json.dumps(output))
         self.assertFalse("subject" in output)
 
+    def test_generator_metadata_identifies_version_and_repository(self):
+        output = compose(
+            builder_document(),
+            extension_name="plr",
+            final_inventory=inventory(("lib/ext.so", "extension")),
+            platform="linux/amd64",
+        )
+        generator_annotation = next(
+            annotation for annotation in output["annotations"]
+            if annotation["annotator"] == "Tool: cnpg-sbom-generator-1"
+        )
+        metadata = json.loads(generator_annotation["comment"])
+        self.assertIn("Tool: cnpg-sbom-generator-1", output["creationInfo"]["creators"])
+        self.assertEqual(metadata["generator"], "cnpg-sbom-generator")
+        self.assertEqual(metadata["generatorVersion"], "1")
+        self.assertEqual(
+            metadata["generatorRepository"],
+            "https://github.com/cnpg-extensions/postgres-extensions-containers",
+        )
+
     def test_license_files_are_directly_mapped_to_the_named_package(self):
         document = builder_document()
         document["packages"].append(

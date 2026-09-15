@@ -21,6 +21,9 @@ from urllib.parse import parse_qs, urlsplit
 
 
 EXTENSION_PACKAGE_ID = "SPDXRef-Package-extension-payload"
+GENERATOR_NAME = "cnpg-sbom-generator"
+GENERATOR_VERSION = "1"
+GENERATOR_REPOSITORY = "https://github.com/cnpg-extensions/postgres-extensions-containers"
 LICENSE_REF = re.compile(r"LicenseRef-[A-Za-z0-9][A-Za-z0-9.-]*")
 LICENSE_OPERATOR = re.compile(r"\s+(?:AND|OR|WITH)\s+")
 
@@ -500,13 +503,14 @@ def compose(builder_document: dict[str, Any], *,
             raise ValueError(f"unsupported target platform: {platform!r}")
     creation_info = output.setdefault("creationInfo", {})
     creators = list(creation_info.get("creators", []))
-    generator_creator = "Tool: cnpg-sbom-generator"
+    generator_creator = f"Tool: {GENERATOR_NAME}-{GENERATOR_VERSION}"
     if generator_creator not in creators:
         creators.append(generator_creator)
     creation_info["creators"] = creators
     metadata = {
-        "generator": "cnpg-sbom-generator",
-        "generatorVersion": "1",
+        "generator": GENERATOR_NAME,
+        "generatorVersion": GENERATOR_VERSION,
+        "generatorRepository": GENERATOR_REPOSITORY,
         "platform": platform,
         "evidence": evidence or {},
     }

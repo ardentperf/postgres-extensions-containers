@@ -149,6 +149,15 @@ payload; BuildKit supplies the final image subject, attestation manifest, and
 image index. A multi-platform index therefore contains one image and one
 combined provenance/SPDX attestation for each platform.
 
+The SPDX creation metadata identifies the generator as
+`Tool: cnpg-sbom-generator-1`. Its document annotation retains the generator
+name, version, and source repository URL; the immutable generator image digest
+selected by the workflow provides the stronger reproducibility boundary.
+
+During generation, BuildKit logs show phase start/completion and elapsed time.
+Long Syft and ScanCode subprocesses emit a heartbeat every 30 seconds, and
+license-file preparation reports its file and chunk counts.
+
 The examples below use the H3 image produced by this repository. Replace
 `INDEX_DIGEST` with the immutable index digest returned by
 `docker buildx imagetools inspect`; the placeholder is intentional because a

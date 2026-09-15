@@ -11,7 +11,13 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
-from generator import final_inventory, infer_platform, scan_licenses, statement_for  # noqa: E402
+from generator import (  # noqa: E402
+    final_inventory,
+    infer_platform,
+    run_command_with_progress,
+    scan_licenses,
+    statement_for,
+)
 
 
 class GeneratorTest(unittest.TestCase):
@@ -53,6 +59,31 @@ class GeneratorTest(unittest.TestCase):
         self.assertEqual(statement["predicate"], predicate)
         self.assertEqual(statement["subject"], [])
 
+    def test_long_running_scanner_reports_a_heartbeat(self):
+        messages = []
+
+        class FakeProcess:
+            returncode = 0
+
+            def __init__(self):
+                self.calls = 0
+
+            def communicate(self, timeout=None):
+                self.calls += 1
+                if self.calls == 1:
+                    raise subprocess.TimeoutExpired(["scanner"], timeout)
+                return "", ""
+
+        with patch("generator.subprocess.Popen", return_value=FakeProcess()), patch(
+            "generator.progress", side_effect=messages.append
+        ):
+            result = run_command_with_progress(["scanner"], "test scanner")
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(messages[0], "test scanner started")
+        self.assertTrue(any("test scanner still running" in message for message in messages))
+        self.assertTrue(any("test scanner complete" in message for message in messages))
+
     def test_license_files_are_split_before_scancode_and_paths_are_collapsed(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -62,12 +93,13 @@ class GeneratorTest(unittest.TestCase):
             temporary.mkdir()
             commands = []
 
-            def fake_scanner(command, **_kwargs):
+            def fake_csplit(command, **_kwargs):
                 commands.append(command)
-                if command[0] == "csplit":
-                    prefix = Path(command[command.index("-f") + 1])
-                    prefix.with_name("license-00").write_text("license text")
-                    return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+                prefix = Path(command[command.index("-f") + 1])
+                prefix.with_name("license-00").write_text("license text")
+                return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+            def fake_scancode(command, **_kwargs):
                 output = Path(command[command.index("--json") + 1])
                 output.write_text(json.dumps({
                     "files": [{
@@ -79,10 +111,18 @@ class GeneratorTest(unittest.TestCase):
                         }],
                     }],
                 }))
-                return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+                class FakeProcess:
+                    returncode = 0
+
+                    def communicate(self, timeout=None):
+                        return "", ""
+
+                return FakeProcess()
 
             with patch("generator.shutil.which", return_value="scancode"), patch(
-                "generator.subprocess.run", side_effect=fake_scanner
+                "generator.subprocess.run", side_effect=fake_csplit
+            ), patch(
+                "generator.subprocess.Popen", side_effect=fake_scancode
             ):
                 report = scan_licenses(root, temporary)
 
