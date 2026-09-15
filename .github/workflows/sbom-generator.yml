@@ -52,7 +52,7 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
         run: |
-          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/cnpg-sbom-generator"
+          image="ghcr.io/cnpg-extensions/cnpg-sbom-generator"
           options=()
           if [[ "$EVENT_NAME" == push ]]; then options+=(--push); fi
           docker buildx build \
