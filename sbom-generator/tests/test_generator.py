@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import hashlib
+import io
+from contextlib import redirect_stdout
 import json
 import os
 import subprocess
@@ -7,7 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
@@ -94,14 +96,13 @@ class GeneratorTest(unittest.TestCase):
             commands = []
 
             def fake_csplit(command, **_kwargs):
-                if command[0] == "scancode":
-                    return fake_scancode(command, **_kwargs)
                 commands.append(command)
                 prefix = Path(command[command.index("-f") + 1])
                 prefix.with_name("license-00").write_text("license text")
                 return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
             def fake_scancode(command, **_kwargs):
+                self.assertIn("--verbose", command)
                 output = Path(command[command.index("--json") + 1])
                 output.write_text(json.dumps({
                     "files": [{
@@ -113,12 +114,20 @@ class GeneratorTest(unittest.TestCase):
                         }],
                     }],
                 }))
-                return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+                process = MagicMock()
+                process.__enter__.return_value = process
+                process.stdout = io.StringIO(
+                    "\x1b[0mScanned: \x1b[0m\x1b[32m/licenses/copyright/license-00\x1b[0m\n"
+                )
+                process.wait.return_value = 0
+                return process
 
+            messages = io.StringIO()
             with patch("generator.shutil.which", return_value="scancode"), patch(
                 "generator.subprocess.run", side_effect=fake_csplit
-            ):
+            ), patch("generator.subprocess.Popen", side_effect=fake_scancode), redirect_stdout(messages):
                 report = scan_licenses(root, temporary)
+            self.assertEqual(messages.getvalue(), "ScanCode processed file /licenses/copyright/license-00\n")
 
         self.assertEqual(report["files"][0]["path"], "licenses/copyright")
         self.assertEqual(
