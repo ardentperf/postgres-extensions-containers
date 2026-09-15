@@ -150,9 +150,15 @@ image index. A multi-platform index therefore contains one image and one
 combined provenance/SPDX attestation for each platform.
 
 The SPDX creation metadata identifies the generator as
-`Tool: cnpg-sbom-generator-1`. Its document annotation retains the generator
-name, version, and source repository URL; the immutable generator image digest
+`Tool: cnpg-sbom-generator-<git-sha>`. The publishing workflow embeds its full
+build Git SHA in the generator image through `SBOM_GENERATOR_REVISION`; this
+also sets the image's `org.opencontainers.image.revision` label. Its document
+annotation retains the generator name, Git SHA as `generatorVersion`, and source
+repository URL; the immutable generator image digest
 selected by the workflow provides the stronger reproducibility boundary.
+Local image builds can pass `--build-arg SBOM_GENERATOR_REVISION=$(git rev-parse HEAD)`
+when building from an unchanged checkout. Without a supplied revision, the
+version is explicitly `unknown`, including when running the composer directly.
 
 During generation, BuildKit logs show phase start/completion and elapsed time.
 Long Syft and ScanCode subprocesses emit a heartbeat every 30 seconds, and

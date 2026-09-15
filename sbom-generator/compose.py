@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 from collections import defaultdict
@@ -22,7 +23,6 @@ from urllib.parse import parse_qs, urlsplit
 
 EXTENSION_PACKAGE_ID = "SPDXRef-Package-extension-payload"
 GENERATOR_NAME = "cnpg-sbom-generator"
-GENERATOR_VERSION = "1"
 GENERATOR_REPOSITORY = "https://github.com/cnpg-extensions/postgres-extensions-containers"
 LICENSE_REF = re.compile(r"LicenseRef-[A-Za-z0-9][A-Za-z0-9.-]*")
 LICENSE_OPERATOR = re.compile(r"\s+(?:AND|OR|WITH)\s+")
@@ -503,13 +503,14 @@ def compose(builder_document: dict[str, Any], *,
             raise ValueError(f"unsupported target platform: {platform!r}")
     creation_info = output.setdefault("creationInfo", {})
     creators = list(creation_info.get("creators", []))
-    generator_creator = f"Tool: {GENERATOR_NAME}-{GENERATOR_VERSION}"
+    generator_version = os.getenv("SBOM_GENERATOR_REVISION") or "unknown"
+    generator_creator = f"Tool: {GENERATOR_NAME}-{generator_version}"
     if generator_creator not in creators:
         creators.append(generator_creator)
     creation_info["creators"] = creators
     metadata = {
         "generator": GENERATOR_NAME,
-        "generatorVersion": GENERATOR_VERSION,
+        "generatorVersion": generator_version,
         "generatorRepository": GENERATOR_REPOSITORY,
         "platform": platform,
         "evidence": evidence or {},

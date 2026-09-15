@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
@@ -88,7 +89,9 @@ class ComposeTest(unittest.TestCase):
         self.assertNotIn("build-only", json.dumps(output))
         self.assertFalse("subject" in output)
 
+    @patch.dict(os.environ, {"SBOM_GENERATOR_REVISION": "abc123" * 6 + "abcd"})
     def test_generator_metadata_identifies_version_and_repository(self):
+        revision = os.environ["SBOM_GENERATOR_REVISION"]
         output = compose(
             builder_document(),
             extension_name="plr",
@@ -97,12 +100,12 @@ class ComposeTest(unittest.TestCase):
         )
         generator_annotation = next(
             annotation for annotation in output["annotations"]
-            if annotation["annotator"] == "Tool: cnpg-sbom-generator-1"
+            if annotation["annotator"] == f"Tool: cnpg-sbom-generator-{revision}"
         )
         metadata = json.loads(generator_annotation["comment"])
-        self.assertIn("Tool: cnpg-sbom-generator-1", output["creationInfo"]["creators"])
+        self.assertIn(f"Tool: cnpg-sbom-generator-{revision}", output["creationInfo"]["creators"])
         self.assertEqual(metadata["generator"], "cnpg-sbom-generator")
-        self.assertEqual(metadata["generatorVersion"], "1")
+        self.assertEqual(metadata["generatorVersion"], revision)
         self.assertEqual(
             metadata["generatorRepository"],
             "https://github.com/cnpg-extensions/postgres-extensions-containers",

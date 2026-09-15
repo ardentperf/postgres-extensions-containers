@@ -24,5 +24,9 @@ RUN apt-get update \
 WORKDIR /opt/cnpg-sbom-generator
 COPY compose.py generator.py hooks.py ./
 
+ARG SBOM_GENERATOR_REVISION=unknown
+ENV SBOM_GENERATOR_REVISION=${SBOM_GENERATOR_REVISION}
+LABEL org.opencontainers.image.revision=${SBOM_GENERATOR_REVISION}
+
 ENV PYTHONUNBUFFERED=1
 ENTRYPOINT ["python3", "/opt/cnpg-sbom-generator/generator.py"]

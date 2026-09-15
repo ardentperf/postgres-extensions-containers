@@ -65,6 +65,7 @@ jobs:
           if [[ "$EVENT_NAME" == push || "$PUBLISH" == true ]]; then options+=(--push); fi
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
+            --build-arg "SBOM_GENERATOR_REVISION=${GITHUB_SHA}" \
             --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
             --tag "$image:latest" \
             --tag "$image:sha-${GITHUB_SHA}" \
