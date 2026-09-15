@@ -1,0 +1,35 @@
+name: Retry failed builds once
+
+# workflow_run listeners must exist on the default branch to receive events.
+on:
+  workflow_run:
+    workflows: ["Build, test and publish extensions"]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  retry:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+    steps:
+      - name: Re-run failed jobs once
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const run = context.payload.workflow_run;
+
+            // Retry only the original attempt; a failed retry stops here.
+            if (run.run_attempt !== 1) {
+              core.info(`Not retrying attempt ${run.run_attempt}`);
+              return;
+            }
+
+            core.info(`Retrying failed jobs for run ${run.id}`);
+            await github.rest.actions.reRunWorkflowFailedJobs({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: run.id,
+            });
