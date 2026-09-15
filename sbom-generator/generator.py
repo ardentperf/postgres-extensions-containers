@@ -223,7 +223,7 @@ def scan_licenses(final_root: Path, temporary: Path) -> dict[str, Any]:
     progress(f"ScanCode license scan ({license_chunks:,} license chunks to scan in total) started")
     started = time.monotonic()
     try:
-        with subprocess.Popen(
+        subprocess.run(
             [
                 scancode,
                 "--verbose",
@@ -233,24 +233,13 @@ def scan_licenses(final_root: Path, temporary: Path) -> dict[str, Any]:
                 str(output),
                 str(scan_root),
             ],
-            stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            text=True,
-        ) as process:
-            for line in process.stdout:
-                # ScanCode styles its completion prefix with ANSI escapes.
-                plain = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
-                if plain.startswith("Scanned: "):
-                    print(f"ScanCode processed file {plain.removeprefix('Scanned: ')}", flush=True)
-                else:
-                    print(line, end="", flush=True)
-            if process.wait():
-                raise RuntimeError(
-                    f"ScanCode failed after {time.monotonic() - started:.1f}s "
-                    f"with exit code {process.returncode}; see scanner output above"
-                )
+            check=True,
+        )
     except FileNotFoundError as error:
         raise RuntimeError("scancode is required when the final payload has /licenses") from error
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError(f"ScanCode failed with exit code {error.returncode}; see output above") from error
     progress(f"ScanCode processed {license_chunks:,} license chunks in {time.monotonic() - started:.1f}s")
     try:
         with output.open(encoding="utf-8") as stream:

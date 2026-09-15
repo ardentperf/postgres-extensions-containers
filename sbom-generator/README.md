@@ -163,8 +163,8 @@ version is explicitly `unknown`, including when running the composer directly.
 During generation, BuildKit logs show phase start/completion and elapsed time.
 Long Syft subprocesses emit a heartbeat every 10 seconds. Each ScanCode invocation
 logs its start and a completion message with the chunk count and elapsed time.
-Each completed chunk is logged as `ScanCode processed file /path/to/license-00`.
-ScanCode's other output and diagnostics are streamed to the build log.
+ScanCode's output and diagnostics go directly to stdout without filtering.
+ScanCode controls its own progress display; non-terminal logs may omit per-file messages.
 License-file preparation reports its file and chunk counts.
 
 The examples below use the H3 image produced by this repository. Replace
