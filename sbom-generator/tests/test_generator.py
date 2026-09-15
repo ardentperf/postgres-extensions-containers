@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import hashlib
+import io
 import json
 import os
 import subprocess
@@ -113,9 +114,10 @@ class GeneratorTest(unittest.TestCase):
                 }))
                 class FakeProcess:
                     returncode = 0
+                    stdout = io.StringIO("Scanned: licenses/copyright/license-00\n")
 
-                    def communicate(self, timeout=None):
-                        return "", ""
+                    def wait(self):
+                        return 0
 
                 return FakeProcess()
 
@@ -134,6 +136,28 @@ class GeneratorTest(unittest.TestCase):
         split_command = next(command for command in commands if command[0] == "csplit")
         self.assertIn("/^License:/", split_command)
         self.assertIn("{*}", split_command)
+
+    def test_scancode_counts_unique_completion_events_and_preserves_failure(self):
+        for exit_code in (0, 1):
+            with self.subTest(exit_code=exit_code):
+                messages = []
+                command = [sys.executable, "-c", (
+                    "import sys; "
+                    "print('Setup plugins...', file=sys.stderr); "
+                    "print('Scanned: /licenses/a', file=sys.stderr); "
+                    "print('Scanned: /licenses/a', file=sys.stderr); "
+                    "print('Scanned: /licenses/b', file=sys.stderr); "
+                    "print('scan diagnostic', file=sys.stderr); "
+                    f"sys.exit({exit_code})"
+                )]
+                with patch("generator.progress", side_effect=messages.append):
+                    if exit_code:
+                        with self.assertRaisesRegex(RuntimeError, "scan diagnostic"):
+                            run_command_with_progress(command, "ScanCode", license_chunks=1200)
+                    else:
+                        run_command_with_progress(command, "ScanCode", license_chunks=1200)
+                self.assertIn("ScanCode: 2 of 1,200 license chunks scanned", messages)
+                self.assertFalse(any("still running" in message for message in messages))
 
 
 if __name__ == "__main__":

@@ -20,6 +20,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections import deque
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -126,7 +127,7 @@ def progress(message: str) -> None:
 
 
 def run_command_with_progress(
-    command: Sequence[str], label: str
+    command: Sequence[str], label: str, *, license_chunks: int | None = None
 ) -> subprocess.CompletedProcess:
     """Run a scanner while keeping long-running phases visible in BuildKit logs."""
 
@@ -136,21 +137,47 @@ def run_command_with_progress(
         process = subprocess.Popen(
             list(command),
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.STDOUT if license_chunks is not None else subprocess.PIPE,
             text=True,
         )
     except FileNotFoundError:
         raise
 
-    while True:
-        try:
-            stdout, stderr = process.communicate(timeout=PROGRESS_INTERVAL_SECONDS)
-            break
-        except subprocess.TimeoutExpired:
-            progress(
-                f"{label} still running "
-                f"({time.monotonic() - started:.0f}s elapsed)"
-            )
+    if license_chunks is not None:
+        # ScanCode --verbose emits Scanned: only after a file scan returns.
+        # Suppress individual paths, retaining a bounded diagnostic tail.
+        completed = set()
+        tail = deque(maxlen=100)
+        last_report = started
+        last_count = 0
+        progress(f"ScanCode: 0 of {license_chunks:,} license chunks scanned")
+        for line in process.stdout:
+            tail.append(line)
+            if line.startswith("Scanned: "):
+                completed.add(line.removeprefix("Scanned: ").strip())
+                count = len(completed)
+                now = time.monotonic()
+                if count != last_count and (
+                    now - last_report >= PROGRESS_INTERVAL_SECONDS
+                    or count == license_chunks
+                ):
+                    progress(f"ScanCode: {count:,} of {license_chunks:,} license chunks scanned")
+                    last_report, last_count = now, count
+        process.stdout.close()
+        process.wait()
+        if len(completed) != last_count:
+            progress(f"ScanCode: {len(completed):,} of {license_chunks:,} license chunks scanned")
+        stdout, stderr = "".join(tail), ""
+    else:
+        while True:
+            try:
+                stdout, stderr = process.communicate(timeout=PROGRESS_INTERVAL_SECONDS)
+                break
+            except subprocess.TimeoutExpired:
+                progress(
+                    f"{label} still running "
+                    f"({time.monotonic() - started:.0f}s elapsed)"
+                )
 
     result = subprocess.CompletedProcess(
         list(command), process.returncode, stdout, stderr
@@ -224,6 +251,7 @@ def scan_licenses(final_root: Path, temporary: Path) -> dict[str, Any]:
         run_command_with_progress(
             [
                 scancode,
+                "--verbose",
                 "--license",
                 "--license-references",
                 "--json",
@@ -231,6 +259,7 @@ def scan_licenses(final_root: Path, temporary: Path) -> dict[str, Any]:
                 str(scan_root),
             ],
             f"ScanCode license scan ({license_chunks} license chunks to scan in total)",
+            license_chunks=license_chunks,
         )
     except FileNotFoundError as error:
         raise RuntimeError("scancode is required when the final payload has /licenses") from error
