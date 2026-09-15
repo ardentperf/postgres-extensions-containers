@@ -161,7 +161,7 @@ when building from an unchanged checkout. Without a supplied revision, the
 version is explicitly `unknown`, including when running the composer directly.
 
 During generation, BuildKit logs show phase start/completion and elapsed time.
-Long Syft subprocesses emit a heartbeat every 30 seconds. ScanCode reports
+Long Syft subprocesses emit a heartbeat every 10 seconds. ScanCode reports
 completed work as `ScanCode: 240 of 1,200 license chunks scanned`, at most once
 every 10 seconds while work advances, plus the initial and final counts. The
 count comes from ScanCode's per-file completion events; scanner errors still
